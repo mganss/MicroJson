@@ -1,0 +1,16 @@
+bin/
+obj/
+*.suo
+*.user
+Web.config
+!Web/Views/Web.config
+*.publish.xml
+.DS_Store
+*.userprefs
+*.pidb
+*.pbxuser
+*.mode1v3
+xcuserdata/
+*.xcworkspacedata
+test-results/
+
