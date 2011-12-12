@@ -2,10 +2,13 @@
 using System.Collections.Generic;
 using System.IO;
 using NUnit.Framework;
+using System.CodeDom.Compiler;
 
+#pragma warning disable 1591
 namespace MicroJson
 {
     [TestFixture]
+    [GeneratedCode("dummy", "dummy")]
     public class ParserTests
     {
         JsonParser Parser;
@@ -137,3 +140,4 @@ namespace MicroJson
         }
     }
 }
+#pragma warning restore 1591

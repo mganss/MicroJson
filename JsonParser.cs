@@ -27,13 +27,11 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Runtime.Serialization;
-using System.Security.Permissions;
 using System.Text;
 
 namespace MicroJson
 {
-    [Serializable]
+#pragma warning disable 1591
     public class ParserException : Exception
     {
         public int Line { get; private set; }
@@ -44,12 +42,6 @@ namespace MicroJson
         {
             Line = line;
             Column = col;
-        }
-
-        [SecurityPermission(SecurityAction.Demand, SerializationFormatter = true)]
-        public override void GetObjectData(SerializationInfo info, StreamingContext context)
-        {
-            base.GetObjectData(info, context);
         }
     }
 
@@ -68,6 +60,7 @@ namespace MicroJson
                 Console.Out.WriteLine(message);
         }
     }
+#pragma warning restore 1591
 
     /// <summary>
     /// Parses JSON into POCOs.
