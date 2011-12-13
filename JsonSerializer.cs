@@ -448,24 +448,30 @@ namespace MicroJson
         }
 
         private void SerializeDictionary(object o, StringBuilder s)
-        {
-            IEnumerable<KeyValuePair<string, object>> kvps;
-            var dict = o as IDictionary;
-            if (dict != null)
-                kvps = dict.Keys.Cast<object>().Select(k => new KeyValuePair<string, object>(k.ToString(), dict[k]));
-            else kvps = (IEnumerable<KeyValuePair<string, object>>)o;
+		{
+			IEnumerable<KeyValuePair<string, object>> kvps;
+			var dict = o as IDictionary;
+			if (dict != null)
+				kvps = dict.Keys.Cast<object>().Select(k => new KeyValuePair<string, object>(k.ToString(), dict[k]));
+			else
+				kvps = (IEnumerable<KeyValuePair<string, object>>)o;
+			
+			// work around MonoTouch Full-AOT issue
+			var kvpList = kvps.ToList();
+			kvpList.Sort((e1, e2) => string.Compare(e1.Key, e2.Key, StringComparison.InvariantCultureIgnoreCase));
+			
+			foreach (var kvp in kvpList)
+			{
+				s.Append(@"""");
+				s.Append(kvp.Key);
+				s.Append(@""":");
+				s.Append(Serialize(kvp.Value));
+				s.Append(",");
+			}
 
-            foreach (var kvp in kvps.OrderBy(kvp => kvp.Key))
-            {
-                s.Append(@"""");
-                s.Append(kvp.Key);
-                s.Append(@""":");
-                s.Append(Serialize(kvp.Value));
-                s.Append(",");
-            }
-
-            if (s.Length > 0 && s[s.Length - 1] == ',') s.Remove(s.Length - 1, 1);
-        }
+			if (s.Length > 0 && s[s.Length - 1] == ',')
+				s.Remove(s.Length - 1, 1);
+		}
 
         class GetterMember
         {

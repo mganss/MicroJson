@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using NUnit.Framework;
+//using NUnit.Framework.SyntaxHelpers;
 using System.CodeDom.Compiler;
 using System;
 
@@ -10,9 +11,19 @@ namespace MicroJson
 {
     public class TestFixtureBase
     {
-        public void AssertThrows<T>(TestDelegate action)
+        public void AssertThrows<T>(Action action)
         {
-            Assert.That(action, Throws.TypeOf(typeof(T)));
+            try
+            {
+                action();
+            }
+            catch (Exception ex)
+            {
+                Assert.That(typeof(T), Is.EqualTo(ex.GetType()));
+                return;
+            }    
+            
+            Assert.Fail("exception not thrown");
         }
     }
 
@@ -36,7 +47,6 @@ namespace MicroJson
         public void TestInvalidInput()
         {
             AssertThrows<ParserException>(() => Parser.Parse(null));
-            AssertThrows<ParserException>(() => Parser.Parse(null));
             AssertThrows<ParserException>(() => Parser.Parse(""));
             AssertThrows<ParserException>(() => Parser.Parse("  \t   \n   "));
         }
@@ -44,7 +54,6 @@ namespace MicroJson
         [Test]
         public void TestBool()
         {
-            Assert.That(true, Is.EqualTo(Parser.Parse("true  ")));
             Assert.That(true, Is.EqualTo(Parser.Parse("true  ")));
             Assert.That(false, Is.EqualTo(Parser.Parse("false")));
             AssertThrows<ParserException>(() => Parser.Parse("hallo"));
@@ -73,7 +82,7 @@ namespace MicroJson
         [Test]
         public void TestNull()
         {
-            Assert.Null(Parser.Parse("null"));
+            Assert.That(Parser.Parse("null") == null);
             AssertThrows<ParserException>(() => Parser.Parse("Null"));
         }
 
@@ -96,14 +105,26 @@ namespace MicroJson
         [Test]
         public void TestList()
         {
-            Assert.That(new[] { 1, 2, 3 }, Is.EquivalentTo((IEnumerable)Parser.Parse("[ 1, 2 , 3 ]")));
-            Assert.That(new object[] { "1", 2.1m, true }, Is.EquivalentTo((IEnumerable)Parser.Parse(@"[""1"", 2.1, true]")));
+            Assert.That(new[] { 1, 2, 3 }, Is.EquivalentTo((ICollection)Parser.Parse("[ 1, 2 , 3 ]")));
+            Assert.That(new object[] { "1", 2.1m, true }, Is.EquivalentTo((ICollection)Parser.Parse(@"[""1"", 2.1, true]")));
             Assert.That((IEnumerable)Parser.Parse("[]"), Is.Empty);
             AssertThrows<ParserException>(() => Parser.Parse("["));
             AssertThrows<ParserException>(() => Parser.Parse("[1 2]"));
             AssertThrows<ParserException>(() => Parser.Parse("[1,2,]"));
-            Assert.That(new object[] { 1, 2, new[] { 3, 4, 5 }, 6 }, Is.EquivalentTo((IEnumerable)Parser.Parse("[1,2,[3,4,5],6]")));
-            Assert.That(new[] { new object[] { } }, Is.EquivalentTo((IEnumerable)Parser.Parse("[[]]")));
+            var l = (IList)Parser.Parse("[1,2,[3,4,5],6]");
+            Assert.That((int)l[0] == 1);
+            Assert.That((int)l[1] == 2);
+            Assert.That((int)l[3] == 6);
+            Assert.That(l.Count == 4);
+            var l2 = (IList)l[2];
+            Assert.That(l2.Count == 3);
+            Assert.That((int)l2[0] == 3);
+            Assert.That((int)l2[1] == 4);
+            Assert.That((int)l2[2] == 5);
+            var l3 = (IList)Parser.Parse("[[]]");
+            Assert.That(l3.Count == 1);
+            var l4 = (IList)l3[0];
+            Assert.That(l4.Count == 0);
         }
 
         [Test]
@@ -114,7 +135,7 @@ namespace MicroJson
                 { "c", 1.2m },
                 { "d", true } 
             };
-            Assert.That(dict, Is.EquivalentTo((IEnumerable)Parser.Parse(@"{""a"":1,""b"" :""b"" ,""c"": 1.2 , ""d"" : true}")));
+            Assert.That(dict, Is.EquivalentTo((ICollection)Parser.Parse(@"{""a"":1,""b"" :""b"" ,""c"": 1.2 , ""d"" : true}")));
             Assert.That((IEnumerable)Parser.Parse("{ }"), Is.Empty);
             AssertThrows<ParserException>(() => Parser.Parse("{"));
             AssertThrows<ParserException>(() => Parser.Parse(@"{""a"":1,}"));
@@ -154,7 +175,7 @@ namespace MicroJson
         public void TestComplex()
         {
             var o = Parser.Parse(complexJsonString);
-            Assert.NotNull(o);
+            Assert.That(o != null);
         }
     }
 }

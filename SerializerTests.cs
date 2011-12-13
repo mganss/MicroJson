@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using NUnit.Framework;
+//using NUnit.Framework.SyntaxHelpers;
 using System.CodeDom.Compiler;
 
 #pragma warning disable 1591
@@ -63,7 +64,7 @@ namespace MicroJson
             Assert.That(1.0, Is.EqualTo(ser.D));
             Assert.That("Test", Is.EqualTo(ser.S));
             Assert.That(new[] { "a", "b", "c" }, Is.EquivalentTo(ser.LS));
-            Assert.True(ser.Inner != null);
+            Assert.That(ser.Inner != null);
             Assert.That("xyz", Is.EqualTo(ser.Inner.b2));
             Assert.That("A", Is.EqualTo(ser.X["a"]));
             Assert.That("B", Is.EqualTo(ser.X["b"]));
