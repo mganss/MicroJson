@@ -9,7 +9,7 @@ namespace MicroJson
 {
     [TestFixture]
     [GeneratedCode("dummy", "dummy")]
-    public class SerializerTests
+    public class SerializerTests: TestFixtureBase
     {
         public class SerializeInner
         {
@@ -58,25 +58,25 @@ namespace MicroJson
             JsonSerializer serializer = new JsonSerializer();
 
             var ser = serializer.Deserialize<Serialize>(s);
-            Assert.AreEqual(1, ser.I);
-            Assert.AreEqual(true, ser.B);
-            Assert.AreEqual(1.0, ser.D);
-            Assert.AreEqual("Test", ser.S);
-            CollectionAssert.AreEqual(new[] { "a", "b", "c" }, ser.LS);
-            Assert.IsNotNull(ser.Inner);
-            Assert.AreEqual("xyz", ser.Inner.b2);
-            Assert.AreEqual("A", ser.X["a"]);
-            Assert.AreEqual("B", ser.X["b"]);
-            Assert.AreEqual(AnEnum.Test2 | AnEnum.Test1, ser.E);
-            Assert.AreEqual(AnEnum.Test1 | AnEnum.Test4, ser.E2);
+            Assert.That(1, Is.EqualTo(ser.I));
+            Assert.That(true, Is.EqualTo(ser.B));
+            Assert.That(1.0, Is.EqualTo(ser.D));
+            Assert.That("Test", Is.EqualTo(ser.S));
+            Assert.That(new[] { "a", "b", "c" }, Is.EquivalentTo(ser.LS));
+            Assert.True(ser.Inner != null);
+            Assert.That("xyz", Is.EqualTo(ser.Inner.b2));
+            Assert.That("A", Is.EqualTo(ser.X["a"]));
+            Assert.That("B", Is.EqualTo(ser.X["b"]));
+            Assert.That(AnEnum.Test2 | AnEnum.Test1, Is.EqualTo(ser.E));
+            Assert.That(AnEnum.Test1 | AnEnum.Test4, Is.EqualTo(ser.E2));
 
             var s2 = @"{ ""LS"": ""a"" }";
             var d = serializer.Deserialize<Serialize>(s2);
-            CollectionAssert.AreEqual(new[] { "a" }, d.LS);
+            Assert.That(new[] { "a" }, Is.EquivalentTo(d.LS));
 
             var s3 = @"{ ""A"": ""a"", ""B"": ""b"", ""C"": ""c"" }";
             var derived = serializer.Deserialize<DerivedSerialize>(s3);
-            CollectionAssert.AreEqual(new Dictionary<string, string> { { "A", "a" }, { "B", "b" }, { "C", "c" } }, derived);
+            Assert.That(new Dictionary<string, string> { { "A", "a" }, { "B", "b" }, { "C", "c" } }, Is.EquivalentTo(derived));
         }
 
         [Test]
@@ -97,7 +97,7 @@ namespace MicroJson
 
             var s = new JsonSerializer().Serialize(o);
 
-            Assert.AreEqual(@"{""B"":true,""D"":2.3,""E"":""Test1, Test2"",""I"":1,""Inner"":{""b2"":""xyz""},""LS"":[""a"",""b"",""c""],""S"":""Test"",""X"":{""a"":""A"",""b"":""B""}}", s);
+            Assert.That(@"{""B"":true,""D"":2.3,""E"":""Test1, Test2"",""I"":1,""Inner"":{""b2"":""xyz""},""LS"":[""a"",""b"",""c""],""S"":""Test"",""X"":{""a"":""A"",""b"":""B""}}", Is.EqualTo(s));
         }
 
         [Test]
@@ -107,10 +107,10 @@ namespace MicroJson
             JsonSerializer serializer = new JsonSerializer();
             var ser = serializer.Deserialize<Serialize>(s);
             var s2 = serializer.Serialize(ser);
-            Assert.AreEqual(s, s2);
+            Assert.That(s, Is.EqualTo(s2));
             var ser2 = serializer.Deserialize<Serialize>(s2);
             var s3 = serializer.Serialize(ser2);
-            Assert.AreEqual(s, s3);
+            Assert.That(s, Is.EqualTo(s3));
         }
         
         [Test]
@@ -119,13 +119,13 @@ namespace MicroJson
             var s = @"{""B"":true,""D"":-1,""E"":""Test1, Test2"",""Inner"":{""b2"":""xyz""},""LS"":[""a"",""b"",""c""],""S"":""Test"",""X"":{""a"":""A"",""b"":""B""}}";
             JsonSerializer serializer = new JsonSerializer();
             var ser = serializer.Deserialize<Serialize>(s);
-            Assert.AreEqual(4711, ser.I);
+            Assert.That(4711, Is.EqualTo(ser.I));
             var s2 = serializer.Serialize(ser);
-            Assert.AreEqual(s, s2);
+            Assert.That(s, Is.EqualTo(s2));
             var ser2 = serializer.Deserialize<Serialize>(s2);
-            Assert.AreEqual(4711, ser2.I);
+            Assert.That(4711, Is.EqualTo(ser2.I));
             var s3 = serializer.Serialize(ser2);
-            Assert.AreEqual(s, s3);
+            Assert.That(s, Is.EqualTo(s3));
         }
 
         [Test]
@@ -134,7 +134,7 @@ namespace MicroJson
             var str = "\" \\ / \b \f \n \r \t \u4711 \\n \\\" \\\\";
             JsonSerializer serializer = new JsonSerializer();
             var ser = serializer.Serialize(str);
-            Assert.AreEqual(@"""\"" \\ / \b \f \n \r \t " + "\u4711" + @" \\n \\\"" \\\\""", ser);
+            Assert.That(@"""\"" \\ / \b \f \n \r \t " + "\u4711" + @" \\n \\\"" \\\\""", Is.EqualTo(ser));
         }
 
         long convertToEpochBased(long ticks)
@@ -148,25 +148,25 @@ namespace MicroJson
             var str = @"""\/Date(0)\/""";
             JsonSerializer serializer = new JsonSerializer();
             var d = serializer.Deserialize<DateTime>(str);
-            Assert.AreEqual(new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).ToLocalTime(), d);
+            Assert.That(new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).ToLocalTime(), Is.EqualTo(d));
             // json resolution is only milliseconds
             var now = new DateTime((DateTime.UtcNow.Ticks / 10000) * 10000, DateTimeKind.Utc);
             str = string.Format(@"""\/Date({0})\/""", convertToEpochBased(now.Ticks));
             var dnow = serializer.Deserialize<DateTime>(str);
-            Assert.AreEqual(now.ToLocalTime(), dnow);
+            Assert.That(now.ToLocalTime(), Is.EqualTo(dnow));
             var x = new DateTime(1900, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);
             var str2 = string.Format(@"""\/Date({0})\/""", convertToEpochBased(x.Ticks));
-            Assert.AreEqual(x.ToLocalTime(), serializer.Deserialize<DateTime>(str2));
-            Assert.Throws<FormatException>(() => serializer.Deserialize<DateTime>(@"""hallo"""));
-            Assert.Throws<FormatException>(() => serializer.Deserialize<DateTime>(@"""\/Date(hallo)\/"""));
+            Assert.That(x.ToLocalTime(), Is.EqualTo(serializer.Deserialize<DateTime>(str2)));
+            AssertThrows<FormatException>(() => serializer.Deserialize<DateTime>(@"""hallo"""));
+            AssertThrows<FormatException>(() => serializer.Deserialize<DateTime>(@"""\/Date(hallo)\/"""));
 
-            Assert.AreEqual(@"""\/Date(0)\/""", serializer.Serialize(new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)));
-            Assert.AreEqual(str, serializer.Serialize(now));
-            Assert.AreEqual(str2, serializer.Serialize(x));
+            Assert.That(@"""\/Date(0)\/""", Is.EqualTo(serializer.Serialize(new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc))));
+            Assert.That(str, Is.EqualTo(serializer.Serialize(now)));
+            Assert.That(str2, Is.EqualTo(serializer.Serialize(x)));
 
             var n = new DateTime((DateTime.Now.Ticks / 10000) * 10000, DateTimeKind.Local);
             var n2 = serializer.Deserialize<DateTime>(serializer.Serialize(n));
-            Assert.AreEqual(n, n2);
+            Assert.That(n, Is.EqualTo(n2));
         }
     }
 }
