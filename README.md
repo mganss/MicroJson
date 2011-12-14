@@ -39,3 +39,8 @@ Notes
 Deserialization is a two step process. First, JSON text is deserialized into generic CLR objects, i.e.
 JSON arrays into `List<object>` and JSON objects into `Dictionary<object>`. If you only need this, then you can
 just include `JsonParser.cs`.
+
+License
+-------
+
+[MIT X11](http://en.wikipedia.org/wiki/MIT_License)
