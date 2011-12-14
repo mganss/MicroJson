@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using NUnit.Framework;
+// uncomment next line on MonoDevelop 2.8 and below
 //using NUnit.Framework.SyntaxHelpers;
 using System.CodeDom.Compiler;
 using System;

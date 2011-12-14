@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using NUnit.Framework;
+// uncomment next line on MonoDevelop 2.8 and below
 //using NUnit.Framework.SyntaxHelpers;
 using System.CodeDom.Compiler;
 
@@ -168,6 +169,33 @@ namespace MicroJson
             var n = new DateTime((DateTime.Now.Ticks / 10000) * 10000, DateTimeKind.Local);
             var n2 = serializer.Deserialize<DateTime>(serializer.Serialize(n));
             Assert.That(n, Is.EqualTo(n2));
+        }
+        
+        public class Test
+        {
+            public string S { get; set; }
+            public int I { get; set; }
+            public List<int> L;
+        }
+
+        [Test]
+        public void TestReadme()
+        {
+            var json = @"{
+                ""S"": ""Hello, world."",
+                ""I"": 4711,
+                ""L"": [1, 2, 3]
+            }";
+            
+            var t = new JsonSerializer().Deserialize<Test>(json);
+
+            Assert.That(t.S, Is.EqualTo("Hello, world."));
+            Assert.That(4711, Is.EqualTo(t.I));
+            Assert.That(new[] { 1, 2, 3 }, Is.EquivalentTo(t.L));
+            
+            var j = new JsonSerializer().Serialize(t);
+            
+            Assert.That(j, Is.EqualTo(@"{""I"":4711,""L"":[1,2,3],""S"":""Hello, world.""}"));
         }
     }
 }
