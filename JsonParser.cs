@@ -258,20 +258,48 @@ namespace MicroJson
             if (dotSeen)
             {
                 decimal d;
-                if (!decimal.TryParse(num, NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign | NumberStyles.AllowExponent, CultureInfo.InvariantCulture, out d))
-                    ThrowParserException("not a number");
-                WriteLineLog("decimal: {0}", d);
-                AdvanceInput(len);
-                return d;
+                if (decimal.TryParse(num, NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign | NumberStyles.AllowExponent, CultureInfo.InvariantCulture, out d))
+                {
+                    WriteLineLog("decimal: {0}", d);
+                    AdvanceInput(len);
+                    return d;
+                }
+                else
+                {
+                    double dbl;
+                    if (double.TryParse(num, NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign | NumberStyles.AllowExponent, CultureInfo.InvariantCulture, out dbl))
+                    {
+                        WriteLineLog("double: {0}", dbl);
+                        AdvanceInput(len);
+                        return dbl;
+                    }
+                    
+                    ThrowParserException("cannot parse decimal number");
+                    return null;
+                }
             }
             else
             {
-                int i;
-                if (!int.TryParse(num, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out i))
-                    ThrowParserException("not a number");
-                WriteLineLog("int: {0}", i);
-                AdvanceInput(len);
-                return i;
+                long l;
+                if (long.TryParse(num, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out l))
+                {
+                    if (l <= int.MaxValue && l >= int.MinValue)
+                    {
+                        int i = (int)l;
+                        WriteLineLog("int: {0}", i);
+                        AdvanceInput(len);
+                        return i;
+                    }
+                    else
+                    {
+                        WriteLineLog("long: {0}", l);
+                        AdvanceInput(len);
+                        return l;
+                    }
+                }
+                
+                ThrowParserException("cannot parse integer number");
+                return null;
             }
         }
 
