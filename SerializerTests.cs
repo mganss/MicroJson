@@ -197,6 +197,35 @@ namespace MicroJson
             
             Assert.That(j, Is.EqualTo(@"{""I"":4711,""L"":[1,2,3],""S"":""Hello, world.""}"));
         }
+
+        [Test]
+        public void TestChar()
+        {
+            var json = @"""x""";
+            char c = new JsonSerializer().Deserialize<char>(json);
+            Assert.That(c, Is.EqualTo('x'));
+            Assert.That(new JsonSerializer().Serialize('c'), Is.EqualTo(@"""c"""));
+        }
+
+        [Test]
+        public void TestGuid()
+        {
+            var guid = Guid.NewGuid();
+            var json = string.Format(@"""{0}""", guid);
+            Guid g = new JsonSerializer().Deserialize<Guid>(json);
+            Assert.That(g, Is.EqualTo(guid));
+            Assert.That(new JsonSerializer().Serialize(g), Is.EqualTo(json));
+        }
+
+        [Test]
+        public void TestUri()
+        {
+            var uri = new Uri(@"https://www.google.com/bla/#blub?x=1&y=2");
+            var json = string.Format(@"""{0}""", uri);
+            Uri u = new JsonSerializer().Deserialize<Uri>(json);
+            Assert.That(u, Is.EqualTo(uri));
+            Assert.That(new JsonSerializer().Serialize(u), Is.EqualTo(json));
+        }
     }
 }
 #pragma warning restore 1591

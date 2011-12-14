@@ -182,6 +182,28 @@ namespace MicroJson
                 }
             }
 
+            if (type == typeof(Guid))
+            {
+                var guid = from as string;
+                if (guid != null)
+                {
+                    Guid g;
+                    if (Guid.TryParse(guid, out g))
+                        return g;
+                }
+            }
+
+            if (type == typeof(Uri))
+            {
+                var uri = from as string;
+                if (uri != null)
+                {
+                    Uri u;
+                    if (Uri.TryCreate(uri, UriKind.RelativeOrAbsolute, out u))
+                        return u;
+                }
+            }
+
             if (!type.IsAssignableFrom(from.GetType()))
             {
                 // Nullable handling
@@ -318,7 +340,7 @@ namespace MicroJson
             var str = obj as string;
             if (str != null)
             {
-                return @"""" + EscapeString(obj.ToString()) + @"""";
+                return @"""" + EscapeString(str) + @"""";
             }
 
             if (obj is int)
@@ -342,6 +364,11 @@ namespace MicroJson
                 return @"""" + EscapeString(obj.ToString()) + @"""";
             }
 
+            if (obj is char)
+            {
+                return @"""" + obj + @"""";
+            }
+
             if (obj.GetType().IsPrimitive)
             {
                 return (string)Convert.ChangeType(obj, typeof(string), CultureInfo.InvariantCulture);
@@ -350,6 +377,16 @@ namespace MicroJson
             if (obj is DateTime)
             {
                 return SerializeDateTime(obj);
+            }
+
+            if (obj is Guid)
+            {
+                return @"""" + obj + @"""";
+            }
+
+            if (obj is Uri)
+            {
+                return @"""" + obj + @"""";
             }
 
             return SerializeComplexType(obj);
