@@ -281,26 +281,26 @@ namespace MicroJson
             }
             else
             {
-                long l;
-                if (long.TryParse(num, NumberStyles.AllowLeadingSign | NumberStyles.AllowExponent, CultureInfo.InvariantCulture, out l))
+                int i;
+                if (int.TryParse(num, NumberStyles.AllowLeadingSign | NumberStyles.AllowExponent, CultureInfo.InvariantCulture, out i))
                 {
-                    if (l <= int.MaxValue && l >= int.MinValue)
-                    {
-                        int i = (int)l;
-                        WriteLineLog("int: {0}", i);
-                        AdvanceInput(len);
-                        return i;
-                    }
-                    else
+                    WriteLineLog("int: {0}", i);
+                    AdvanceInput(len);
+                    return i;
+                }
+                else
+                {
+                    long l;
+                    if (long.TryParse(num, NumberStyles.AllowLeadingSign | NumberStyles.AllowExponent, CultureInfo.InvariantCulture, out l))
                     {
                         WriteLineLog("long: {0}", l);
                         AdvanceInput(len);
                         return l;
                     }
+
+                    ThrowParserException("cannot parse integer number");
+                    return null;
                 }
-                
-                ThrowParserException("cannot parse integer number");
-                return null;
             }
         }
 
