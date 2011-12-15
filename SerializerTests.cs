@@ -175,7 +175,7 @@ namespace MicroJson
         {
             public string S { get; set; }
             public int I { get; set; }
-            public List<int> L;
+            public int[] L;
         }
 
         [Test]

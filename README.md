@@ -17,6 +17,13 @@ MicroJson consists of two source files you can just drop into your project. It h
 Usage
 -----
 
+	public class Test
+    {
+        public string S { get; set; }
+        public int I { get; set; }
+        public int[] L;
+    }
+
     var json = @"{
         ""S"": ""Hello, world."",
         ""I"": 4711,

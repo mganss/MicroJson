@@ -135,97 +135,116 @@ namespace MicroJson
         static Regex DateTimeRegex = new Regex(@"^/Date\((-?\d+)\)/$");
 
         private object Deserialize(object from, Type type)
-        {
-            if (from == null) return null;
+		{
+			if (from == null)
+				return null;
 
-            var dict = from as IEnumerable<KeyValuePair<string, object>>;
-            if (dict != null)
-            {
-                var to = Activator.CreateInstance(type);
-                DeserializeDictionary(dict, to);
-                return to;
-            }
+			var dict = from as IEnumerable<KeyValuePair<string, object>>;
+			if (dict != null)
+			{
+				var to = Activator.CreateInstance(type);
+				DeserializeDictionary(dict, to);
+				return to;
+			}
 
-            var list = from as IList;
-            if (list != null)
-            {
-                var to = Activator.CreateInstance(type);
-                DeserializeList(list, (IList)to);
-                return to;
-            }
+			var list = from as IList;
+			if (list != null)
+			{
+				if (type.IsArray)
+				{
+					var elementType = type.GetElementType();
+					var arr = Array.CreateInstance(elementType, list.Count);
+					DeserializeArray(list, arr, elementType);
+					return arr;
+				}
+				else
+				{
+					var to = (IList)Activator.CreateInstance(type);
+					DeserializeList(list, to);
+					return to;
+				}
+			}
 
-            if (typeof(IList).IsAssignableFrom(type))
-            {
-                var to = (IList)Activator.CreateInstance(type);
-                var itemType = to.GetType().GetProperty("Item").PropertyType;
-                to.Add(Deserialize(from, itemType));
-                return to;
-            }
+			if (typeof(IList).IsAssignableFrom(type))
+			{
+				var to = (IList)Activator.CreateInstance(type);
+				var itemType = to.GetType().GetProperty("Item").PropertyType;
+				to.Add(Deserialize(from, itemType));
+				return to;
+			}
 
-            if (type.IsEnum)
-            {
-                return Enum.Parse(type, from.ToString(), true);
-            }
+			if (type.IsEnum)
+			{
+				return Enum.Parse(type, from.ToString(), true);
+			}
 
-            if (type == typeof(DateTime))
-            {
-                var date = from as string;
-                if (date != null)
-                {
-                    Match dateTimeMatch = DateTimeRegex.Match(date);
-                    if (dateTimeMatch.Success)
-                    {
-                        var ticks = long.Parse(dateTimeMatch.Groups[1].Value, NumberFormatInfo.InvariantInfo);
-                        var epochTicks = (ticks * 10000) + 621355968000000000;
-                        return new DateTime(epochTicks, DateTimeKind.Utc).ToLocalTime();
-                    }
-                }
-            }
+			if (type == typeof(DateTime))
+			{
+				var date = from as string;
+				if (date != null)
+				{
+					Match dateTimeMatch = DateTimeRegex.Match(date);
+					if (dateTimeMatch.Success)
+					{
+						var ticks = long.Parse(dateTimeMatch.Groups[1].Value, NumberFormatInfo.InvariantInfo);
+						var epochTicks = (ticks * 10000) + 621355968000000000;
+						return new DateTime(epochTicks, DateTimeKind.Utc).ToLocalTime();
+					}
+				}
+			}
 
-            if (type == typeof(Guid))
-            {
-                var guid = from as string;
-                if (guid != null)
-                {
-                    Guid g;
-                    if (Guid.TryParse(guid, out g))
-                        return g;
-                }
-            }
+			if (type == typeof(Guid))
+			{
+				var guid = from as string;
+				if (guid != null)
+				{
+					Guid g;
+					if (Guid.TryParse(guid, out g))
+						return g;
+				}
+			}
 
-            if (type == typeof(Uri))
-            {
-                var uri = from as string;
-                if (uri != null)
-                {
-                    Uri u;
-                    if (Uri.TryCreate(uri, UriKind.RelativeOrAbsolute, out u))
-                        return u;
-                }
-            }
+			if (type == typeof(Uri))
+			{
+				var uri = from as string;
+				if (uri != null)
+				{
+					Uri u;
+					if (Uri.TryCreate(uri, UriKind.RelativeOrAbsolute, out u))
+						return u;
+				}
+			}
 
-            if (!type.IsAssignableFrom(from.GetType()))
-            {
-                // Nullable handling
-                if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
-                {
-                    type = type.GetGenericArguments()[0];
-                }
+			if (!type.IsAssignableFrom(from.GetType()))
+			{
+				// Nullable handling
+				if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
+				{
+					type = type.GetGenericArguments()[0];
+				}
 
-                return Convert.ChangeType(from, type, CultureInfo.InvariantCulture);
-            }
+				return Convert.ChangeType(from, type, CultureInfo.InvariantCulture);
+			}
 
-            return from;
-        }
+			return from;
+		}
 
-        private void DeserializeList(IList from, IList to)
-        {
-            var itemType = to.GetType().GetProperty("Item").PropertyType;
-            foreach (var item in from)
-            {
-                to.Add(Deserialize(item, itemType));
-            }
-        }
+		private void DeserializeArray(IList from, Array to, Type itemType)
+		{
+			for (int i = 0; i < from.Count; i++)
+			{
+				to.SetValue(from[i], i);
+			}
+		}
+
+		private void DeserializeList(IList from, IList to)
+		{
+			var itemType = to.GetType().GetProperty("Item").PropertyType;
+			foreach (var item in from)
+			{
+				to.Add(Deserialize(item, itemType));
+			}
+		}
 
         private void DeserializeDictionary(IEnumerable<KeyValuePair<string, object>> from, object to)
         {
