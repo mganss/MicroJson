@@ -245,11 +245,12 @@ namespace MicroJson
             {
                 dotSeen = true;
                 ExpectDigits(ref currentPos);
-                if (Accept(c => (c == 'e' || c == 'E'), ref currentPos))
-                {
-                    Accept(c => (c == '-' || c == '+'), ref currentPos);
-                    ExpectDigits(ref currentPos);
-                }
+            }
+
+            if (Accept(c => (c == 'e' || c == 'E'), ref currentPos))
+            {
+                Accept(c => (c == '-' || c == '+'), ref currentPos);
+                ExpectDigits(ref currentPos);
             }
 
             var len = currentPos - Pos;
@@ -281,7 +282,7 @@ namespace MicroJson
             else
             {
                 long l;
-                if (long.TryParse(num, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out l))
+                if (long.TryParse(num, NumberStyles.AllowLeadingSign | NumberStyles.AllowExponent, CultureInfo.InvariantCulture, out l))
                 {
                     if (l <= int.MaxValue && l >= int.MinValue)
                     {

@@ -71,6 +71,12 @@ namespace MicroJson
             Assert.That(-1, Is.EqualTo(Parser.Parse("-1")));
             Assert.That(-1.2e-3m, Is.EqualTo(Parser.Parse("-1.2e-3")));
             Assert.That(0, Is.EqualTo(Parser.Parse("0")));
+            Assert.That(1000, Is.EqualTo(Parser.Parse("1e3")));
+            Assert.That(Parser.Parse("1000") is int);
+            Assert.That(Parser.Parse("1.2") is decimal);
+            Assert.That(Parser.Parse((2L << 40).ToString()) is long);
+            Assert.That(Parser.Parse("2.5e100") is double);
+            AssertThrows<ParserException>(() => Parser.Parse("1e-3"));
             AssertThrows<ParserException>(() => Parser.Parse(".1"));
             AssertThrows<ParserException>(() => Parser.Parse("0."));
             AssertThrows<ParserException>(() => Parser.Parse("1.2.3"));
