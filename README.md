@@ -21,7 +21,7 @@ Usage
     {
         public string S { get; set; }
         public int I { get; set; }
-        public int[] L;
+        public List<int> L;
     }
 
     var json = @"{

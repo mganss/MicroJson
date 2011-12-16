@@ -175,28 +175,32 @@ namespace MicroJson
         {
             public string S { get; set; }
             public int I { get; set; }
-            public int[] L;
+            public List<int> L;
         }
 
         [Test]
         public void TestReadme()
-        {
-            var json = @"{
+		{
+			// work around MonoTouch full-AOT limitation
+			var l = new List<int>();
+			l.Add(1);
+			
+			var json = @"{
                 ""S"": ""Hello, world."",
                 ""I"": 4711,
                 ""L"": [1, 2, 3]
             }";
             
-            var t = new JsonSerializer().Deserialize<Test>(json);
+			var t = new JsonSerializer().Deserialize<Test>(json);
 
-            Assert.That(t.S, Is.EqualTo("Hello, world."));
-            Assert.That(4711, Is.EqualTo(t.I));
-            Assert.That(new[] { 1, 2, 3 }, Is.EquivalentTo(t.L));
+			Assert.That(t.S, Is.EqualTo("Hello, world."));
+			Assert.That(4711, Is.EqualTo(t.I));
+			Assert.That(new[] { 1, 2, 3 }, Is.EquivalentTo(t.L));
             
-            var j = new JsonSerializer().Serialize(t);
+			var j = new JsonSerializer().Serialize(t);
             
-            Assert.That(j, Is.EqualTo(@"{""I"":4711,""L"":[1,2,3],""S"":""Hello, world.""}"));
-        }
+			Assert.That(j, Is.EqualTo(@"{""I"":4711,""L"":[1,2,3],""S"":""Hello, world.""}"));
+		}
 
         [Test]
         public void TestChar()
