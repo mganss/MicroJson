@@ -51,3 +51,8 @@ License
 -------
 
 [MIT X11](http://en.wikipedia.org/wiki/MIT_License)
+
+Used at
+---------
+
+[UpdateStar](http://www.updatestar.com/)
