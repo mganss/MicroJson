@@ -27,6 +27,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Text;
 
 namespace MicroJson
@@ -50,14 +51,21 @@ namespace MicroJson
         void WriteLine(string message, params object[] arguments);
     }
 
-    public class ConsoleLogger : ILogger
+    public class TextWriterLogger : ILogger
     {
+        public TextWriter Writer { get; set; }
+
+        public TextWriterLogger(TextWriter writer)
+        {
+            Writer = writer;
+        }
+
         public void WriteLine(string message, params object[] arguments)
         {
             if (arguments != null && arguments.Length > 0)
-                Console.Out.WriteLine(message, arguments);
+                Writer.WriteLine(message, arguments);
             else 
-                Console.Out.WriteLine(message);
+                Writer.WriteLine(message);
         }
     }
 #pragma warning restore 1591

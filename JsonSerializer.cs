@@ -297,37 +297,35 @@ namespace MicroJson
             var key = name + type.GetHashCode();
             if (!MemberCache.TryGetValue(key, out member))
             {
-                var members = type.GetMember(name, MemberTypes.Field | MemberTypes.Property,
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase | BindingFlags.SetField | BindingFlags.SetProperty);
-                if (members != null && members.Length > 0)
+                var fieldInfo = type.GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase);
+                if (fieldInfo != null)
                 {
-                    var m = members[0];
-                    if (m.MemberType == MemberTypes.Field)
+                    member = new SetterMember
                     {
-                        member = new SetterMember
-                        {
-                            Type = ((FieldInfo)m).FieldType,
-                            Set = (o, v) => ((FieldInfo)m).SetValue(o, v)
-                        };
-                    }
-                    else
-                    {
-                        var prop = (PropertyInfo)m;
-                        if (prop.CanWrite)
-                        {
-                            member = new SetterMember
-                            {
-                                Type = prop.PropertyType,
-                                Set = (o, v) => ((PropertyInfo)m).SetValue(o, v, null)
-                            };
-                        }
-                    }
+                        Type = fieldInfo.FieldType,
+                        Set = (o, v) => fieldInfo.SetValue(o, v)
+                    };
 
                     MemberCache[key] = member;
                 }
                 else
                 {
-                    MemberCache[key] = null;
+                    var propertyInfo = type.GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase);
+                    if (propertyInfo != null && propertyInfo.CanWrite)
+                    {
+                        member = new SetterMember
+                        {
+                            Type = propertyInfo.PropertyType,
+                            Set = (o, v) => propertyInfo.SetValue(o, v, null)
+                        };
+
+                        MemberCache[key] = member;
+                    }
+                    else
+                    {
+                        MemberCache[key] = null;
+
+                    }
                 }
             }
 
@@ -514,7 +512,7 @@ namespace MicroJson
 			
 			// work around MonoTouch Full-AOT issue
 			var kvpList = kvps.ToList();
-			kvpList.Sort((e1, e2) => string.Compare(e1.Key, e2.Key, StringComparison.InvariantCultureIgnoreCase));
+			kvpList.Sort((e1, e2) => string.Compare(e1.Key, e2.Key, StringComparison.OrdinalIgnoreCase));
 			
 			foreach (var kvp in kvpList)
 			{
@@ -541,35 +539,48 @@ namespace MicroJson
         private GetterMember[] GetMembers(Type type)
         {
             GetterMember[] members;
+
             if (!MembersCache.TryGetValue(type, out members))
             {
-                members = type.GetMembers(BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase)
-                    .Where(m => (m.MemberType == MemberTypes.Property && ((PropertyInfo)m).CanWrite)
-                        || m.MemberType == MemberTypes.Field)
-                    .OrderBy(m => m.Name)
-                    .Select(m => BuildGetterMember(m))
-                    .ToArray();
+                var props = type.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase)
+                    .Where(p => p.CanWrite)
+                    .Select(p => BuildGetterMember(p));
+
+                var fields = type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase)
+                    .Select(f => BuildGetterMember(f));
+
+                members = props.Concat(fields).OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase).ToArray();
+
                 MembersCache[type] = members;
             }
 
             return members;
         }
 
-        private static GetterMember BuildGetterMember(MemberInfo m)
+        private static GetterMember BuildGetterMember(PropertyInfo p)
         {
-            var defaultAttribute = m.GetCustomAttributes(typeof(DefaultValueAttribute), true).FirstOrDefault() as DefaultValueAttribute;
+            var defaultAttribute = p.GetCustomAttributes(typeof(DefaultValueAttribute), true).FirstOrDefault() as DefaultValueAttribute;
             return new GetterMember
             {
-                Name = m.Name,
-                Get = m.MemberType == MemberTypes.Property ? (Func<object,object>)(o => ((PropertyInfo)m).GetValue(o, null))
-                    : (o => ((FieldInfo)m).GetValue(o)),
-                DefaultValue = defaultAttribute != null ? defaultAttribute.Value : GetDefaultValueForMember(m)
+                Name = p.Name,
+                Get = (Func<object, object>)(o => p.GetValue(o, null)),
+                DefaultValue = defaultAttribute != null ? defaultAttribute.Value : GetDefaultValueForType(p.PropertyType)
             };
         }
 
-        private static object GetDefaultValueForMember(MemberInfo m)
+        private static GetterMember BuildGetterMember(FieldInfo f)
         {
-            var type = m.MemberType == MemberTypes.Property ? ((PropertyInfo)m).PropertyType : ((FieldInfo)m).FieldType;
+            var defaultAttribute = f.GetCustomAttributes(typeof(DefaultValueAttribute), true).FirstOrDefault() as DefaultValueAttribute;
+            return new GetterMember
+            {
+                Name = f.Name,
+                Get = (o => f.GetValue(o)),
+                DefaultValue = defaultAttribute != null ? defaultAttribute.Value : GetDefaultValueForType(f.FieldType)
+            };
+        }
+
+        private static object GetDefaultValueForType(Type type)
+        {
             return type.IsValueType ? Activator.CreateInstance(type) : null;
         }
     }

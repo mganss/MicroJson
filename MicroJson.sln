@@ -1,7 +1,11 @@
 ﻿
-Microsoft Visual Studio Solution File, Format Version 11.00
-# Visual Studio 2010
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 2013
+VisualStudioVersion = 12.0.21005.1
+MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MicroJson", "MicroJson.csproj", "{64EE0B6F-498C-427C-AA81-E8039E6BF29D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MicroJson.Tests", "MicroJson.Tests\MicroJson.Tests.csproj", "{0534C1DD-83C1-4635-9A3E-C9EEEDDD12D2}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -13,6 +17,10 @@ Global
 		{64EE0B6F-498C-427C-AA81-E8039E6BF29D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{64EE0B6F-498C-427C-AA81-E8039E6BF29D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{64EE0B6F-498C-427C-AA81-E8039E6BF29D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0534C1DD-83C1-4635-9A3E-C9EEEDDD12D2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0534C1DD-83C1-4635-9A3E-C9EEEDDD12D2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0534C1DD-83C1-4635-9A3E-C9EEEDDD12D2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0534C1DD-83C1-4635-9A3E-C9EEEDDD12D2}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
