@@ -371,9 +371,14 @@ namespace MicroJson
                 return b.Value ? "true" : "false";
             }
 
-            if (obj is decimal || obj is double || obj is float)
+            if (obj is decimal)
             {
                 return ((IFormattable)obj).ToString("G", NumberFormatInfo.InvariantInfo);
+            }
+
+            if (obj is double || obj is float)
+            {
+                return ((IFormattable)obj).ToString("R", NumberFormatInfo.InvariantInfo);
             }
 
             if (obj is Enum)

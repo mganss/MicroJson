@@ -89,7 +89,7 @@ namespace MicroJson
             {
                 I = 1,
                 B = true,
-                D = 2.3,
+                D = 2.3735863875686736,
                 S = "Test",
                 LS = new List<string>(new[] { "a", "b", "c" }),
                 Inner = new SerializeInner { b2 = "xyz" },
@@ -101,7 +101,7 @@ namespace MicroJson
 
             var s = new JsonSerializer().Serialize(o);
 
-            Assert.That(s, Is.EqualTo(@"{""AE"":[""Test2"",""Test4""],""B"":true,""D"":2.3,""E"":""Test1, Test2"",""I"":1,""Inner"":{""b2"":""xyz""},""LS"":[""a"",""b"",""c""],""S"":""Test"",""X"":{""a"":""A"",""b"":""B""}}"));
+            Assert.That(s, Is.EqualTo(@"{""AE"":[""Test2"",""Test4""],""B"":true,""D"":2.3735863875686736,""E"":""Test1, Test2"",""I"":1,""Inner"":{""b2"":""xyz""},""LS"":[""a"",""b"",""c""],""S"":""Test"",""X"":{""a"":""A"",""b"":""B""}}"));
         }
 
         [Test]
@@ -253,6 +253,15 @@ namespace MicroJson
             Assert.That(new JsonSerializer().Deserialize<AnEnum[]>(json), Is.EqualTo(a));
             var a2 = new JsonSerializer().Deserialize<AnEnum[]>("[4,1]");
             Assert.That(a2, Is.EquivalentTo(a));
+        }
+
+        [Test]
+        public void TestDecimal()
+        {
+            var d = 1.23456789;
+            var json = new JsonSerializer().Serialize(d);
+            Assert.That(json, Is.EqualTo("1.23456789"));
+            Assert.That(new JsonSerializer().Deserialize<decimal>(json), Is.EqualTo(d));
         }
     }
 }
