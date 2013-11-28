@@ -233,7 +233,7 @@ namespace MicroJson
 		{
 			for (int i = 0; i < from.Count; i++)
 			{
-				to.SetValue(from[i], i);
+				to.SetValue(Deserialize(from[i], itemType), i);
 			}
 		}
 

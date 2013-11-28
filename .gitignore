@@ -13,4 +13,4 @@ Web.config
 xcuserdata/
 *.xcworkspacedata
 test-results/
-
+packages/

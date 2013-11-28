@@ -33,6 +33,7 @@ namespace MicroJson
             public Dictionary<string, string> X { get; set; }
             public AnEnum E { get; set; }
             public AnEnum E2 { get; set; }
+            public AnEnum[] AE { get; set; }
 
             public Serialize()
             {
@@ -95,11 +96,12 @@ namespace MicroJson
                 X = new Dictionary<string,string> { { "b", "B" }, { "a", "A" } },
                 E = AnEnum.Test2 | AnEnum.Test1,
                 // default value for E2
+                AE = new[] { AnEnum.Test2, AnEnum.Test4 }
             };
 
             var s = new JsonSerializer().Serialize(o);
 
-            Assert.That(@"{""B"":true,""D"":2.3,""E"":""Test1, Test2"",""I"":1,""Inner"":{""b2"":""xyz""},""LS"":[""a"",""b"",""c""],""S"":""Test"",""X"":{""a"":""A"",""b"":""B""}}", Is.EqualTo(s));
+            Assert.That(@"{""AE"":[""Test2"",""Test4""],""B"":true,""D"":2.3,""E"":""Test1, Test2"",""I"":1,""Inner"":{""b2"":""xyz""},""LS"":[""a"",""b"",""c""],""S"":""Test"",""X"":{""a"":""A"",""b"":""B""}}", Is.EqualTo(s));
         }
 
         [Test]
@@ -229,6 +231,28 @@ namespace MicroJson
             Uri u = new JsonSerializer().Deserialize<Uri>(json);
             Assert.That(u, Is.EqualTo(uri));
             Assert.That(new JsonSerializer().Serialize(u), Is.EqualTo(json));
+        }
+
+        [Test]
+        public void TestEnum()
+        {
+            var e = AnEnum.Test3;
+            var json = new JsonSerializer().Serialize(e);
+            Assert.That(json, Is.EqualTo(@"""Test3"""));
+            Assert.That(new JsonSerializer().Deserialize<AnEnum>(json), Is.EqualTo(e));
+            var e4 = new JsonSerializer().Deserialize<AnEnum>("8");
+            Assert.That(e4, Is.EqualTo(AnEnum.Test4));
+        }
+
+        [Test]
+        public void TestArray()
+        {
+            var a = new AnEnum[] { AnEnum.Test3, AnEnum.Test1 };
+            var json = new JsonSerializer().Serialize(a);
+            Assert.That(json, Is.EqualTo(@"[""Test3"",""Test1""]"));
+            Assert.That(new JsonSerializer().Deserialize<AnEnum[]>(json), Is.EqualTo(a));
+            var a2 = new JsonSerializer().Deserialize<AnEnum[]>("[4,1]");
+            Assert.That(a2, Is.EquivalentTo(a));
         }
     }
 }
