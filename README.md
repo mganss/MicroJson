@@ -47,6 +47,10 @@ Deserialization is a two step process. First, JSON text is deserialized into gen
 JSON arrays into `List<object>` and JSON objects into `Dictionary<object>`. If you only need this, then you can
 just include `JsonParser.cs`.
 
+Type information can be preserved when de/serializing by setting the `UseTypeInfo` property to true on the `JsonSerializer` object.
+This will emit the class name of a serialized object as an additional property (can be configured through the property `TypeInfoPropertyName`, default is `@type`)
+for classes which are derived and/or implement an interface.
+
 License
 -------
 
