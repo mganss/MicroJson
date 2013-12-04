@@ -114,7 +114,42 @@ namespace MicroJson
             var o = parser.Parse(text);
             return (T)Deserialize(o, typeof(T));
         }
-        
+
+        /// <summary>
+        /// Constructor.
+        /// </summary>
+        public JsonSerializer()
+        {
+            TypeInfoPropertyName = "@type";
+        }
+
+        /// <summary>
+        /// <para>
+        /// Gets or sets a value indicating whether to serialize and deserialize type information
+        /// for derived classes. 
+        /// </para>
+        /// <para>
+        /// When a derived class is serialized and no additional type information is serialized
+        /// a deserializer does not know the derived class the object originated from. Setting this property to true emits
+        /// type information in an additional property whose name is indicated by <see cref="TypeInfoPropertyName"/> and 
+        /// deserializing honors this property. Type information is emitted only for types which are derived classes or implement
+        /// an interface.
+        /// </para>
+        /// <para>
+        /// The type information includes only the class name (no namespace, assembly information etc.) in order to be potentially compatible
+        /// with other implementations. When deserializing, the type indicated by the type information is searched only in the assembly where the base
+        /// type is located.
+        /// </para>
+        /// The default is false.
+        /// </summary>
+        public bool UseTypeInfo { get; set; }
+
+        /// <summary>
+        /// Gets or sets a property name where additional type information is serialized to and deserialized from.
+        /// The default is "@type".
+        /// </summary>
+        public string TypeInfoPropertyName { get; set; }
+
         /// <summary>
         /// Deserializes generic POCO object into an object of the specified type.
         /// </summary>
@@ -134,14 +169,40 @@ namespace MicroJson
 
         static Regex DateTimeRegex = new Regex(@"^/Date\((-?\d+)\)/$");
 
+        private Dictionary<string, Type> TypeCache = new Dictionary<string, Type>();
+
         private object Deserialize(object from, Type type)
 		{
 			if (from == null)
 				return null;
 
-			var dict = from as IEnumerable<KeyValuePair<string, object>>;
+			var dict = from as IDictionary<string, object>;
 			if (dict != null)
 			{
+                if (UseTypeInfo)
+                {
+                    object typeNameObject;
+
+                    if (dict.TryGetValue(TypeInfoPropertyName, out typeNameObject))
+                    {
+                        var typeName = typeNameObject as string;
+
+                        if (!string.IsNullOrEmpty(typeName))
+                        {
+                            Type derivedType;
+
+                            if (!TypeCache.TryGetValue(typeName, out derivedType))
+                            {
+                                derivedType = type.Assembly.GetTypes()
+                                    .FirstOrDefault(t => t != type && type.IsAssignableFrom(t) && string.Equals(t.Name, typeName, StringComparison.OrdinalIgnoreCase));
+                                TypeCache[typeName] = derivedType ?? typeof(object);
+                            }
+
+                            if (derivedType != null && derivedType != typeof(object)) type = derivedType;
+                        }
+                    }
+                }
+
 				var to = Activator.CreateInstance(type);
 				DeserializeDictionary(dict, to);
 				return to;
@@ -487,6 +548,16 @@ namespace MicroJson
         {
             var type = o.GetType();
             var members = GetMembers(type);
+
+            if (UseTypeInfo && ((type.BaseType != typeof(object) && type.BaseType != null) || type.GetInterfaces().Any()))
+            {
+                // emit type info
+                s.Append(@"""");
+                s.Append(TypeInfoPropertyName);
+                s.Append(@""":""");
+                s.Append(type.Name);
+                s.Append(@""",");
+            }
 
             foreach (var member in members)
             {

@@ -263,6 +263,40 @@ namespace MicroJson
             Assert.That(json, Is.EqualTo("1.23456789"));
             Assert.That(new JsonSerializer().Deserialize<decimal>(json), Is.EqualTo(d));
         }
+
+        public interface ITypeInfo
+        {
+            string InterfaceProperty { get; set; }
+        }
+
+        public class BaseTypeInfo
+        {
+            public string BaseProperty { get; set; }
+        }
+
+        public class DerivedTypeInfo: BaseTypeInfo, ITypeInfo
+        {
+            public string DerivedProperty { get; set; }
+            public string InterfaceProperty { get; set; }
+        }
+
+        [Test]
+        public void TestTypeInfo()
+        {
+            var serializer = new JsonSerializer { UseTypeInfo = true };
+            var o = new DerivedTypeInfo { BaseProperty = "base", DerivedProperty = "derived", InterfaceProperty = "interface" };
+            var json = serializer.Serialize(o);
+            Assert.That(json, Is.EqualTo(@"{""@type"":""DerivedTypeInfo"",""BaseProperty"":""base"",""DerivedProperty"":""derived"",""InterfaceProperty"":""interface""}"));
+            var o2 = new BaseTypeInfo { BaseProperty = "base" };
+            var json2 = serializer.Serialize(o2);
+            Assert.That(json2, Is.EqualTo(@"{""BaseProperty"":""base""}"));
+
+            var d = serializer.Deserialize<BaseTypeInfo>(json);
+            Assert.That(d, Is.TypeOf<DerivedTypeInfo>());
+
+            var i = serializer.Deserialize<ITypeInfo>(json);
+            Assert.That(i, Is.TypeOf<DerivedTypeInfo>());
+        }
     }
 }
 #pragma warning restore 1591
