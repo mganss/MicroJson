@@ -15,3 +15,5 @@ xcuserdata/
 test-results/
 packages/
 *.nupkg
+TestResult.xml
+coverage.xml
