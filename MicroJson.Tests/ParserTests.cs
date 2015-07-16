@@ -84,6 +84,7 @@ namespace MicroJson
             AssertThrows<ParserException>(() => Parser.Parse("0.e3"));
             AssertThrows<ParserException>(() => Parser.Parse("0.2e"));
             AssertThrows<ParserException>(() => Parser.Parse("+1"));
+            AssertThrows<ParserException>(() => Parser.Parse("1.4e+655655656876587657656565765658758675867568756875678567856785768576567765765567886"));
         }
 
         [Test]
@@ -190,8 +191,9 @@ namespace MicroJson
         {
             var sw = new StringWriter();
             var parser = new JsonParser { Logger = new TextWriterLogger(sw), CollectLineInfo = true };
-            var o = parser.Parse("4711");
-            Assert.That("int: 4711\r\n", Is.EqualTo(sw.ToString()));
+            var o = parser.Parse(@"[4711,
+4712]");
+            Assert.That("list: [\r\nint: 4711\r\nint: 4712\r\n]\r\n", Is.EqualTo(sw.ToString()));
             AssertThrows<ParserException>(() => parser.Parse("{"));
         }
 
