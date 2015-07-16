@@ -1,6 +1,10 @@
 MicroJson
 =========
 
+[![Version](https://img.shields.io/nuget/v/MicroJson.svg)](https://www.nuget.org/packages/MicroJson)
+[![Build status](https://ci.appveyor.com/api/projects/status/d71toeu341rclabr/branch/master?svg=true)](https://ci.appveyor.com/project/mganss/microjson/branch/master)
+[![Coverage Status](https://coveralls.io/repos/mganss/MicroJson/badge.svg?branch=master&service=github)](https://coveralls.io/github/mganss/MicroJson?branch=master)
+
 MicroJson is a small library for serializing/deserializing [JSON](http://www.json.org/) strings from strongly 
 typed CLR objects (POCOs). It is basically a replacement for the [JavaScriptSerializer](http://msdn.microsoft.com/en-us/library/system.web.script.serialization.javascriptserializer.aspx)
 class for situations where you cannot or do not want to use that class. Its aim is neither to be fast nor feature-rich but
