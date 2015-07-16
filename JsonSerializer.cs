@@ -1,21 +1,21 @@
-﻿// 
+﻿//
 // JsonSerializer.cs
-//  
+//
 // Author:
 //       Michael Ganss <michael@ganss.org>
-// 
+//
 // Copyright (c) 2011 Michael Ganss
-// 
+//
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in
 // all copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -57,7 +57,7 @@ namespace MicroJson
         {
             return new JsonSerializer().Deserialize<T>(text);
         }
-  
+
         /// <summary>
         /// Serializes an object into JSON text.
         /// </summary>
@@ -71,7 +71,7 @@ namespace MicroJson
         {
             return new JsonSerializer().Serialize(obj);
         }
-  
+
         /// <summary>
         /// Deserializes JSON text into an object of the specified type.
         /// </summary>
@@ -126,12 +126,12 @@ namespace MicroJson
         /// <summary>
         /// <para>
         /// Gets or sets a value indicating whether to serialize and deserialize type information
-        /// for derived classes. 
+        /// for derived classes.
         /// </para>
         /// <para>
         /// When a derived class is serialized and no additional type information is serialized
         /// a deserializer does not know the derived class the object originated from. Setting this property to true emits
-        /// type information in an additional property whose name is indicated by <see cref="TypeInfoPropertyName"/> and 
+        /// type information in an additional property whose name is indicated by <see cref="TypeInfoPropertyName"/> and
         /// deserializing honors this property. Type information is emitted only for types which are derived classes or implement
         /// an interface.
         /// </para>
@@ -392,7 +392,7 @@ namespace MicroJson
 
             return member;
         }
-  
+
         /// <summary>
         /// Serialize the specified object into JSON.
         /// </summary>
@@ -573,7 +573,7 @@ namespace MicroJson
                     s.Append(",");
                 }
             }
-            
+
             if (s.Length > 0 && s[s.Length - 1] == ',') s.Remove(s.Length - 1, 1);
         }
 
@@ -585,11 +585,11 @@ namespace MicroJson
 				kvps = dict.Keys.Cast<object>().Select(k => new KeyValuePair<string, object>(k.ToString(), dict[k]));
 			else
 				kvps = (IEnumerable<KeyValuePair<string, object>>)o;
-			
+
 			// work around MonoTouch Full-AOT issue
 			var kvpList = kvps.ToList();
 			kvpList.Sort((e1, e2) => string.Compare(e1.Key, e2.Key, StringComparison.OrdinalIgnoreCase));
-			
+
 			foreach (var kvp in kvpList)
 			{
 				s.Append(@"""");

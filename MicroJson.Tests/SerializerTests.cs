@@ -116,7 +116,7 @@ namespace MicroJson
             var s3 = serializer.Serialize(ser2);
             Assert.That(s, Is.EqualTo(s3));
         }
-        
+
         [Test]
         public void TestDefaultValue()
         {
@@ -172,7 +172,7 @@ namespace MicroJson
             var n2 = serializer.Deserialize<DateTime>(serializer.Serialize(n));
             Assert.That(n, Is.EqualTo(n2));
         }
-        
+
         public class Test
         {
             public string S { get; set; }
@@ -186,21 +186,21 @@ namespace MicroJson
 			// work around MonoTouch full-AOT limitation
 			var l = new List<int>();
 			l.Add(1);
-			
+
 			var json = @"{
                 ""S"": ""Hello, world."",
                 ""I"": 4711,
                 ""L"": [1, 2, 3]
             }";
-            
+
 			var t = new JsonSerializer().Deserialize<Test>(json);
 
 			Assert.That(t.S, Is.EqualTo("Hello, world."));
 			Assert.That(4711, Is.EqualTo(t.I));
 			Assert.That(new[] { 1, 2, 3 }, Is.EquivalentTo(t.L));
-            
+
 			var j = new JsonSerializer().Serialize(t);
-            
+
 			Assert.That(j, Is.EqualTo(@"{""I"":4711,""L"":[1,2,3],""S"":""Hello, world.""}"));
 		}
 
@@ -262,6 +262,7 @@ namespace MicroJson
             var json = new JsonSerializer().Serialize(d);
             Assert.That(json, Is.EqualTo("1.23456789"));
             Assert.That(new JsonSerializer().Deserialize<decimal>(json), Is.EqualTo(d));
+            Assert.That("1.2", Is.EqualTo(new JsonSerializer().Serialize(1.2m)));
         }
 
         public interface ITypeInfo
@@ -296,6 +297,26 @@ namespace MicroJson
 
             var i = serializer.Deserialize<ITypeInfo>(json);
             Assert.That(i, Is.TypeOf<DerivedTypeInfo>());
+        }
+
+        [Test]
+        public void TestStaticMethods()
+        {
+            Assert.That(4711, Is.EqualTo(JsonSerializer.DeserializeObject<int>("4711")));
+            Assert.That("4711", Is.EqualTo(JsonSerializer.SerializeObject(4711)));
+        }
+
+        [Test]
+        public void TestMisc()
+        {
+            AssertThrows<ArgumentException>(() => new JsonSerializer().Deserialize<object>("", null));
+            Assert.That(4711, Is.EqualTo(new JsonSerializer().Deserialize<int>(4711)));
+            Assert.That(4711, Is.EqualTo(new JsonSerializer().Deserialize<int?>(4711.0)));
+            Assert.Null(new JsonSerializer().Deserialize<object>((object)null));
+            Assert.That("null", Is.EqualTo(new JsonSerializer().Serialize(null)));
+            Assert.That("4711", Is.EqualTo(new JsonSerializer().Serialize((UInt64)4711)));
+            Assert.That(@"""\u0001""", Is.EqualTo(new JsonSerializer().Serialize("\u0001")));
+            Assert.That(@"{""x"":1}", Is.EqualTo(new JsonSerializer().Serialize(new List<KeyValuePair<string, object>> { new KeyValuePair<string, object>("x", 1) })));
         }
     }
 }
