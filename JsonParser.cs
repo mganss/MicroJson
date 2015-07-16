@@ -146,11 +146,6 @@ namespace MicroJson
 
         private void AdvanceInput(int n)
         {
-            if (n == 0)
-            {
-                return;
-            }
-
             if (CollectLineInfo)
             {
                 for (int i = Pos; i < Pos + n; i++)
