@@ -1,21 +1,21 @@
-﻿// 
+﻿//
 // JsonParser.cs
-//  
+//
 // Author:
 //       Michael Ganss <michael@ganss.org>
-// 
+//
 // Copyright (c) 2011 Michael Ganss
-// 
+//
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in
 // all copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -64,7 +64,7 @@ namespace MicroJson
         {
             if (arguments != null && arguments.Length > 0)
                 Writer.WriteLine(message, arguments);
-            else 
+            else
                 Writer.WriteLine(message);
         }
     }
@@ -105,10 +105,8 @@ namespace MicroJson
         /// </param>
         public object Parse(string text)
         {
-            if (text == null) {
-                ThrowParserException("input is null");
-                return null;
-            }
+            if (text == null)
+                throw BuildParserException("input is null");
 
             Input = text;
             InputLength = text.Length;
@@ -121,7 +119,7 @@ namespace MicroJson
             SkipWhitespace();
 
             if (Pos != InputLength)
-                ThrowParserException("extra characters at end");
+                throw BuildParserException("extra characters at end");
 
             return o;
         }
@@ -134,15 +132,15 @@ namespace MicroJson
             }
         }
 
-        private void ThrowParserException(string msg)
+        private ParserException BuildParserException(string msg)
         {
             if (CollectLineInfo)
             {
-                throw new ParserException(string.Format(CultureInfo.InvariantCulture, "Parse error: {0} at line {1}, column {2}.", msg, Line, Col), Line, Col);
+                return new ParserException(string.Format(CultureInfo.InvariantCulture, "Parse error: {0} at line {1}, column {2}.", msg, Line, Col), Line, Col);
             }
             else
             {
-                throw new ParserException("Parse error: " + msg + ".", 0, 0);
+                return new ParserException("Parse error: " + msg + ".", 0, 0);
             }
         }
 
@@ -197,7 +195,7 @@ namespace MicroJson
         {
             if (Pos >= InputLength || Input[Pos] != c)
             {
-                ThrowParserException("expected '" + c + "'");
+                throw BuildParserException("expected '" + c + "'");
             }
 
             AdvanceInput(1);
@@ -211,7 +209,7 @@ namespace MicroJson
 
             if (Pos >= InputLength)
             {
-                ThrowParserException("input contains no value");
+                throw BuildParserException("input contains no value");
             }
 
             var nextChar = Input[Pos];
@@ -282,9 +280,8 @@ namespace MicroJson
                         AdvanceInput(len);
                         return dbl;
                     }
-                    
-                    ThrowParserException("cannot parse decimal number");
-                    return null;
+
+                    throw BuildParserException("cannot parse decimal number");
                 }
             }
             else
@@ -306,8 +303,7 @@ namespace MicroJson
                         return l;
                     }
 
-                    ThrowParserException("cannot parse integer number");
-                    return null;
+                    throw BuildParserException("cannot parse integer number");
                 }
             }
         }
@@ -327,7 +323,7 @@ namespace MicroJson
         {
             int start = pos;
             while (pos < InputLength && char.IsDigit(Input[pos])) pos++;
-            if (start == pos) ThrowParserException("not a number");
+            if (start == pos) throw BuildParserException("not a number");
         }
 
         private string String()
@@ -339,7 +335,7 @@ namespace MicroJson
             {
                 if (currentPos >= InputLength)
                 {
-                    ThrowParserException("unterminated string");
+                    throw BuildParserException("unterminated string");
                 }
 
                 var c = Input[currentPos];
@@ -357,7 +353,7 @@ namespace MicroJson
 
                     if (currentPos >= InputLength)
                     {
-                        ThrowParserException("unterminated escape sequence string");
+                        throw BuildParserException("unterminated escape sequence string");
                     }
 
                     c = Input[currentPos];
@@ -387,23 +383,22 @@ namespace MicroJson
                         case 'u':
                             currentPos += 4;
                             if (currentPos >= InputLength)
-                                ThrowParserException("unterminated unicode escape in string");
+                                throw BuildParserException("unterminated unicode escape in string");
                             else
                             {
                                 int u;
                                 if (!int.TryParse(Input.Substring(currentPos - 3, 4), NumberStyles.AllowHexSpecifier, NumberFormatInfo.InvariantInfo, out u))
-                                    ThrowParserException("not a well-formed unicode escape sequence in string");
+                                    throw BuildParserException("not a well-formed unicode escape sequence in string");
                                 sb.Append((char)u);
                             }
                             break;
                         default:
-                            ThrowParserException("unknown escape sequence in string");
-                            break;
+                            throw BuildParserException("unknown escape sequence in string");
                     }
                 }
                 else if ((int)c < 0x20)
                 {
-                    ThrowParserException("control character in string");
+                    throw BuildParserException("control character in string");
                 }
                 else
                 {
@@ -434,8 +429,7 @@ namespace MicroJson
                 return null;
             }
 
-            ThrowParserException("unknown token");
-            return null;
+            throw BuildParserException("unknown token");
         }
 
         private IList<object> List()
