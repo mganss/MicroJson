@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/MicroJson/MicroJson.csproj" />
+    <Project Path="src/MicroJson.SourceGenerator/MicroJson.SourceGenerator.csproj" />
   </Folder>
   <Folder Name="/test/">
     <Project Path="test/MicroJson.Tests/MicroJson.Tests.csproj" />

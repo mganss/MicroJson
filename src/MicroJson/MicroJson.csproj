@@ -44,4 +44,10 @@
   <ItemGroup>
     <None Include="../../README.md" Pack="true" PackagePath="" />
   </ItemGroup>
+
+  <!-- the source generator ships inside this package -->
+  <ItemGroup>
+    <ProjectReference Include="../MicroJson.SourceGenerator/MicroJson.SourceGenerator.csproj" ReferenceOutputAssembly="false" PrivateAssets="all" />
+    <None Include="../MicroJson.SourceGenerator/bin/$(Configuration)/netstandard2.0/MicroJson.SourceGenerator.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+  </ItemGroup>
 </Project>
