@@ -67,6 +67,8 @@ sealed class ContextGenerator
     const string OptionsAttributeName = "MicroJson.MicroJsonOptionsAttribute";
     const string PropertyNameAttributeName = "MicroJson.MicroJsonPropertyNameAttribute";
     const string IgnoreAttributeName = "MicroJson.MicroJsonIgnoreAttribute";
+    const string DerivedTypeAttributeName = "MicroJson.MicroJsonDerivedTypeAttribute";
+    const string PolymorphicAttributeName = "MicroJson.MicroJsonPolymorphicAttribute";
     const string Writer = "global::MicroJson.JsonWriter";
     const string Reader = "global::MicroJson.JsonReader";
 
@@ -335,6 +337,10 @@ sealed class ContextGenerator
         if (named.TypeKind is TypeKind.Class or TypeKind.Struct && !named.IsStatic && !named.IsRefLikeType)
             return Add(type, Kind.Object);
 
+        // interfaces are supported as the base of polymorphic types
+        if (named.TypeKind == TypeKind.Interface && HasAttribute(named, DerivedTypeAttributeName))
+            return Add(type, Kind.Object);
+
         reason = "the type is not supported";
         return null;
     }
@@ -403,21 +409,215 @@ sealed class ContextGenerator
 
     void EmitType(TypeModel model)
     {
-        var members = model.Kind == Kind.Object ? AnalyzeMembers(model) : null;
+        if (model.Kind == Kind.Object)
+        {
+            EmitObjectType(model);
+            return;
+        }
 
         Line($"private static void Write_{model.Id}({Writer} w, {model.Name} value)");
         Line("{");
-        EmitWrite(model, members);
+        EmitWrite(model);
         Line("}");
         Line();
         Line($"private static {model.Name} Read_{model.Id}({Reader} r)");
         Line("{");
-        EmitRead(model, members);
+        EmitRead(model);
         Line("}");
         Line();
     }
 
-    void EmitWrite(TypeModel model, List<MemberModel>? members)
+    sealed record DerivedType(string Discriminator, TypeModel Type, int Depth);
+
+    /// <summary>
+    /// Emits the methods for a class, struct, or interface: <c>WriteMembers_X</c> and <c>ReadBody_X</c> handle the properties,
+    /// <c>Write_X</c> and <c>Read_X</c> the braces, null, and the type discriminator of polymorphic types.
+    /// </summary>
+    void EmitObjectType(TypeModel model)
+    {
+        var named = (INamedTypeSymbol)model.Symbol;
+        var isInterface = named.TypeKind == TypeKind.Interface;
+        var members = isInterface ? [] : AnalyzeMembers(model);
+        var derivedTypes = ResolveDerivedTypes(named, out var discriminatorName);
+        var polymorphic = derivedTypes.Count > 0;
+        // abstract polymorphic types are only read through a discriminator; abstract types without derived types report MJ0004
+        var hasBody = !isInterface && !(polymorphic && named.IsAbstract);
+        var name = model.Name;
+        var id = model.Id;
+
+        if (!isInterface)
+        {
+            Line($"private static void WriteMembers_{id}({Writer} w, {name} value)");
+            Line("{");
+            EmitObjectMembersWrite(members);
+            Line("}");
+            Line();
+        }
+
+        Line($"private static void Write_{id}({Writer} w, {name} value)");
+        Line("{");
+
+        if (model.CanBeNull)
+            Line("    if (value is null) { w.WriteNull(); return; }");
+
+        if (polymorphic)
+        {
+            Line("    switch (value)");
+            Line("    {");
+            foreach (var derived in derivedTypes)
+            {
+                Line($"        case {derived.Type.Name} v:");
+                Line("            w.WriteStartObject();");
+                Line($"            w.WritePropertyName({Literal(discriminatorName)});");
+                Line($"            w.WriteString({Literal(derived.Discriminator)});");
+                Line($"            WriteMembers_{derived.Type.Id}(w, v);");
+                Line("            w.WriteEndObject();");
+                Line("            return;");
+            }
+            Line("    }");
+        }
+
+        if (isInterface || (polymorphic && named.IsAbstract))
+        {
+            Line($"    throw new global::System.NotSupportedException({Literal("The runtime type of the value is not registered through [MicroJsonDerivedType] on '" + named.ToDisplayString() + "'.")});");
+        }
+        else
+        {
+            Line("    w.WriteStartObject();");
+            Line($"    WriteMembers_{id}(w, value);");
+            Line("    w.WriteEndObject();");
+        }
+
+        Line("}");
+        Line();
+
+        if (hasBody)
+        {
+            Line($"private static {name} ReadBody_{id}({Reader} r, string name, bool ended)");
+            Line("{");
+            EmitObjectReadBody(model, members);
+            Line("}");
+            Line();
+        }
+
+        Line($"private static {name} Read_{id}({Reader} r)");
+        Line("{");
+
+        if (model.CanBeNull)
+            Line("    if (r.TryReadNull()) return null;");
+
+        Line("    r.ReadStartObject();");
+
+        const string missing = "throw r.CreateException(\"missing type discriminator\");";
+
+        if (polymorphic)
+        {
+            Line("    if (r.TryReadPropertyName(out var name))");
+            Line("    {");
+            Line($"        if (name == {Literal(discriminatorName)})");
+            Line("        {");
+            Line("            switch (r.ReadString())");
+            Line("            {");
+            foreach (var derived in derivedTypes)
+                Line($"                case {Literal(derived.Discriminator)}: return ReadBody_{derived.Type.Id}(r, null, false);");
+            Line("                default: throw r.CreateException(\"unknown type discriminator\");");
+            Line("            }");
+            Line("        }");
+            Line(hasBody ? $"        return ReadBody_{id}(r, name, false);" : "        " + missing);
+            Line("    }");
+            Line(hasBody ? $"    return ReadBody_{id}(r, null, true);" : "    " + missing);
+        }
+        else
+        {
+            Line(hasBody ? $"    return ReadBody_{id}(r, null, false);" : "    " + missing);
+        }
+
+        Line("}");
+        Line();
+    }
+
+    /// <summary>
+    /// Resolves the derived types registered through <c>[MicroJsonDerivedType]</c> on a type, most derived first
+    /// (so that the generated type switch matches the nearest registered type).
+    /// </summary>
+    List<DerivedType> ResolveDerivedTypes(INamedTypeSymbol baseType, out string discriminatorName)
+    {
+        discriminatorName = "$type";
+
+        var polymorphicAttribute = baseType.GetAttributes().FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == PolymorphicAttributeName);
+        if (polymorphicAttribute != null)
+        {
+            foreach (var arg in polymorphicAttribute.NamedArguments)
+            {
+                if (arg.Key == "TypeDiscriminatorPropertyName" && arg.Value.Value is string propertyName)
+                    discriminatorName = propertyName;
+            }
+        }
+
+        var result = new List<DerivedType>();
+        var discriminators = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var attribute in baseType.GetAttributes().Where(a => a.AttributeClass?.ToDisplayString() == DerivedTypeAttributeName))
+        {
+            if (attribute.ConstructorArguments.Length != 2
+                || attribute.ConstructorArguments[0].Value is not ITypeSymbol derived
+                || attribute.ConstructorArguments[1].Value is not string discriminator)
+            {
+                continue;
+            }
+
+            var location = attribute.ApplicationSyntaxReference?.GetSyntax(cancellationToken).GetLocation();
+
+            string? error = null;
+            TypeModel? derivedModel = null;
+
+            if (derived is not INamedTypeSymbol { TypeKind: TypeKind.Class or TypeKind.Struct, IsAbstract: false })
+                error = "it must be a non-abstract class or struct";
+            else if (!DerivesFrom(derived, baseType))
+                error = "it does not derive from or implement '" + baseType.ToDisplayString() + "'";
+            else if (result.Any(d => SymbolEqualityComparer.Default.Equals(d.Type.Symbol, derived)))
+                error = "it is registered more than once";
+            else if (!discriminators.Add(discriminator))
+                error = "the discriminator '" + discriminator + "' is already used";
+            else if ((derivedModel = Resolve(derived, out var reason)) == null)
+                error = reason ?? "the type is not supported";
+
+            if (error != null)
+            {
+                Report(Diagnostics.InvalidDerivedType, location, derived.ToDisplayString(), baseType.ToDisplayString(), error);
+                continue;
+            }
+
+            result.Add(new DerivedType(discriminator, derivedModel!, Depth(derived)));
+        }
+
+        // stable sort: most derived first
+        return result.Select((d, i) => (d, i)).OrderByDescending(x => x.d.Depth).ThenBy(x => x.i).Select(x => x.d).ToList();
+    }
+
+    static bool DerivesFrom(ITypeSymbol type, INamedTypeSymbol baseType)
+    {
+        if (baseType.TypeKind == TypeKind.Interface)
+            return type.AllInterfaces.Contains(baseType, SymbolEqualityComparer.Default);
+
+        for (var t = type.BaseType; t != null; t = t.BaseType)
+        {
+            if (SymbolEqualityComparer.Default.Equals(t, baseType))
+                return true;
+        }
+
+        return false;
+    }
+
+    static int Depth(ITypeSymbol type)
+    {
+        int depth = 0;
+        for (var t = type.BaseType; t != null; t = t.BaseType)
+            depth++;
+        return depth;
+    }
+
+    void EmitWrite(TypeModel model)
     {
         var element = model.Element;
 
@@ -472,13 +672,10 @@ sealed class ContextGenerator
             case Kind.Enum:
                 EmitEnumWrite(model);
                 break;
-            case Kind.Object:
-                EmitObjectWrite(model, members!);
-                break;
         }
     }
 
-    void EmitRead(TypeModel model, List<MemberModel>? members)
+    void EmitRead(TypeModel model)
     {
         var element = model.Element;
 
@@ -536,9 +733,6 @@ sealed class ContextGenerator
                 break;
             case Kind.Enum:
                 EmitEnumRead(model);
-                break;
-            case Kind.Object:
-                EmitObjectRead(model, members!);
                 break;
         }
     }
@@ -730,13 +924,11 @@ sealed class ContextGenerator
         return new string(chars);
     }
 
-    void EmitObjectWrite(TypeModel model, List<MemberModel> members)
+    /// <summary>
+    /// Emits the body of <c>WriteMembers_X</c>, which writes the properties of an object without the braces.
+    /// </summary>
+    void EmitObjectMembersWrite(List<MemberModel> members)
     {
-        if (model.CanBeNull)
-            Line("    if (value is null) { w.WriteNull(); return; }");
-
-        Line("    w.WriteStartObject();");
-
         var i = 0;
         foreach (var member in members.Where(m => m.CanRead))
         {
@@ -764,11 +956,13 @@ sealed class ContextGenerator
             if (condition != null)
                 Line("    }");
         }
-
-        Line("    w.WriteEndObject();");
     }
 
-    void EmitObjectRead(TypeModel model, List<MemberModel> members)
+    /// <summary>
+    /// Emits the body of <c>ReadBody_X(r, name, ended)</c>, which reads the properties of an object after its start has been read.
+    /// <c>name</c> is a property name that has already been read (or null), <c>ended</c> is true if the end of the object has already been read.
+    /// </summary>
+    void EmitObjectReadBody(TypeModel model, List<MemberModel> members)
     {
         var named = (INamedTypeSymbol)model.Symbol;
         var ctor = FindConstructor(named, members, out var error);
@@ -783,9 +977,6 @@ sealed class ContextGenerator
         var readMembers = members.Where(m => m.Parameter != null || m.Write != WriteKind.None).ToList();
         var locals = new Dictionary<MemberModel, int>();
 
-        if (model.CanBeNull)
-            Line("    if (r.TryReadNull()) return null;");
-
         for (int i = 0; i < readMembers.Count; i++)
         {
             var member = readMembers[i];
@@ -797,8 +988,7 @@ sealed class ContextGenerator
                 Line($"    bool h{i} = false;");
         }
 
-        Line("    r.ReadStartObject();");
-        Line("    while (r.TryReadPropertyName(out var name))");
+        Line("    while (!ended && (name != null || r.TryReadPropertyName(out name)))");
         Line("    {");
 
         if (caseInsensitive)
@@ -825,6 +1015,7 @@ sealed class ContextGenerator
             Line("        }");
         }
 
+        Line("        name = null;");
         Line("    }");
 
         var args = ctor == null

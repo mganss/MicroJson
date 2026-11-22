@@ -232,6 +232,48 @@ namespace MicroJson.Tests
         }
 
         [Test]
+        public void TestInvalidDerivedTypes()
+        {
+            var result = Run("""
+                using System.Collections.Generic;
+                using MicroJson;
+                public class Other { }
+                public abstract class AbstractDerived : Base { }
+                public class Good : Base { }
+                public class Good2 : Base { }
+                public interface IFoo { }
+                [MicroJsonDerivedType(typeof(Other), "other")]
+                [MicroJsonDerivedType(typeof(AbstractDerived), "abstract")]
+                [MicroJsonDerivedType(typeof(Base), "base")]
+                [MicroJsonDerivedType(typeof(Good), "good")]
+                [MicroJsonDerivedType(typeof(Good), "good-again")]
+                [MicroJsonDerivedType(typeof(Good2), "good")]
+                [MicroJsonDerivedType(typeof(IFoo), "interface")]
+                public class Base { }
+                [MicroJsonDerivedType(typeof(ListShape), "list")]
+                public interface IShape { }
+                public class ListShape : List<int>, IShape { }
+                public interface IPlain { }
+                [MicroJsonSerializable(typeof(Base))]
+                [MicroJsonSerializable(typeof(IShape))]
+                [MicroJsonSerializable(typeof(IPlain))]
+                partial class Json { }
+                """);
+
+            Assert.That(Ids(result), Is.EquivalentTo(new[] { "MJ0007", "MJ0007", "MJ0007", "MJ0007", "MJ0007", "MJ0007", "MJ0007", "MJ0002" }));
+            var messages = result.GeneratorDiagnostics.Where(d => d.Id == "MJ0007").Select(d => d.GetMessage()).ToArray();
+            Assert.That(messages[0], Does.Contain("'Other'").And.Contain("does not derive from or implement 'Base'"));
+            Assert.That(messages[1], Does.Contain("'AbstractDerived'").And.Contain("non-abstract class or struct"));
+            Assert.That(messages[2], Does.Contain("'Base'").And.Contain("does not derive"));
+            Assert.That(messages[3], Does.Contain("registered more than once"));
+            Assert.That(messages[4], Does.Contain("discriminator 'good' is already used"));
+            Assert.That(messages[5], Does.Contain("'IFoo'").And.Contain("non-abstract class or struct"));
+            Assert.That(messages[6], Does.Contain("'ListShape'").And.Contain("only arrays"));
+            Assert.That(result.GeneratorDiagnostics.Single(d => d.Id == "MJ0002").GetMessage(), Does.Contain("'IPlain'"));
+            Assert.That(result.CompilationDiagnostics, Is.Empty, string.Join(Environment.NewLine, result.CompilationDiagnostics));
+        }
+
+        [Test]
         public void TestDuplicateNames()
         {
             var result = Run("""

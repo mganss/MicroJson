@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using NUnit.Framework;
 
 namespace MicroJson.Tests
@@ -118,6 +119,78 @@ namespace MicroJson.Tests
         public string? B;
     }
 
+    [MicroJsonDerivedType(typeof(Dog), "dog")]
+    [MicroJsonDerivedType(typeof(Cat), "cat")]
+    [MicroJsonDerivedType(typeof(Lion), "lion")]
+    public abstract class Animal
+    {
+        public string Name { get; set; } = "";
+    }
+
+    public class Dog : Animal
+    {
+        public bool GoodBoy { get; set; }
+    }
+
+    public class Cat : Animal
+    {
+        public int Lives { get; set; } = 9;
+    }
+
+    public class Lion : Cat
+    {
+        public bool Roars { get; set; }
+    }
+
+    public class Kitten : Cat
+    {
+    }
+
+    public class Fish : Animal
+    {
+    }
+
+    [MicroJsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
+    [MicroJsonDerivedType(typeof(Circle), "circle")]
+    [MicroJsonDerivedType(typeof(Square), "square")]
+    public interface IShape
+    {
+    }
+
+    public record Circle(double Radius) : IShape;
+
+    public struct Square : IShape
+    {
+        public double Side { get; set; }
+    }
+
+    public class Triangle : IShape
+    {
+    }
+
+    [MicroJsonDerivedType(typeof(Manager), "manager")]
+    public class Employee
+    {
+        public string Name { get; set; } = "";
+    }
+
+    public class Manager : Employee
+    {
+        public int Reports { get; set; }
+    }
+
+    public class Zoo
+    {
+        public List<Animal> Animals { get; set; } = [];
+        public IShape? Shape { get; set; }
+        public Dictionary<string, Employee> Staff { get; set; } = [];
+    }
+
+    [MicroJsonSerializable(typeof(Animal))]
+    [MicroJsonSerializable(typeof(Cat))]
+    [MicroJsonSerializable(typeof(IShape))]
+    [MicroJsonSerializable(typeof(Employee))]
+    [MicroJsonSerializable(typeof(Zoo))]
     [MicroJsonSerializable(typeof(Person))]
     [MicroJsonSerializable(typeof(Point))]
     [MicroJsonSerializable(typeof(Size))]
@@ -488,6 +561,98 @@ namespace MicroJson.Tests
         {
             Assert.Throws<ArgumentOutOfRangeException>(() => TestJson.Serialize(new AllTypes { D = double.NaN }));
             Assert.Throws<ArgumentOutOfRangeException>(() => TestJson.Serialize(new AllTypes { F = float.PositiveInfinity }));
+        }
+
+        [Test]
+        public void TestPolymorphicAbstractBase()
+        {
+            Assert.That(TestJson.Serialize((Animal)new Dog { Name = "Rex", GoodBoy = true }), Is.EqualTo("""{"$type":"dog","Name":"Rex","GoodBoy":true}"""));
+            Assert.That(TestJson.Serialize((Animal)new Lion { Name = "Leo", Roars = true }), Is.EqualTo("""{"$type":"lion","Name":"Leo","Lives":9,"Roars":true}"""));
+            // unregistered types are written as their nearest registered base type
+            Assert.That(TestJson.Serialize((Animal)new Kitten { Name = "Tom", Lives = 3 }), Is.EqualTo("""{"$type":"cat","Name":"Tom","Lives":3}"""));
+            Assert.Throws<NotSupportedException>(() => TestJson.Serialize((Animal)new Fish()));
+            Assert.That(TestJson.Serialize((Animal)null!), Is.EqualTo("null"));
+
+            var dog = TestJson.Deserialize<Animal>("""{"$type":"dog","Name":"Rex","GoodBoy":true}""");
+            Assert.That(dog, Is.TypeOf<Dog>());
+            Assert.That(dog.Name, Is.EqualTo("Rex"));
+            Assert.That(((Dog)dog).GoodBoy, Is.True);
+
+            var lion = TestJson.Deserialize<Animal>("""{"$type":"lion","Roars":true,"x":[1]}""");
+            Assert.That(lion, Is.TypeOf<Lion>());
+            Assert.That(((Lion)lion).Roars, Is.True);
+            Assert.That(((Lion)lion).Lives, Is.EqualTo(9));
+
+            Assert.That(TestJson.Deserialize<Animal>("""{"$type":"cat"}"""), Is.TypeOf<Cat>());
+            Assert.That(TestJson.Deserialize<Animal>("null"), Is.Null);
+
+            // an abstract base needs a discriminator, and it must come first
+            Assert.That(Assert.Throws<ParserException>(() => TestJson.Deserialize<Animal>("{}"))!.Message, Does.Contain("missing type discriminator"));
+            Assert.That(Assert.Throws<ParserException>(() => TestJson.Deserialize<Animal>("""{"Name":"x","$type":"dog"}"""))!.Message, Does.Contain("missing type discriminator"));
+            Assert.That(Assert.Throws<ParserException>(() => TestJson.Deserialize<Animal>("""{"$type":"fish"}"""))!.Message, Does.Contain("unknown type discriminator"));
+            Assert.Throws<ParserException>(() => TestJson.Deserialize<Animal>("""{"$type":1}"""));
+        }
+
+        [Test]
+        public void TestDerivedTypeWithoutPolymorphism()
+        {
+            // Cat is a registered derived type, but serialized as Cat it is not polymorphic
+            Assert.That(TestJson.Serialize(new Lion { Name = "Leo" }), Is.EqualTo("""{"Name":"Leo","Lives":9}"""));
+            Assert.That(TestJson.Deserialize<Cat>("""{"Name":"Tom","Lives":2}""").Lives, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void TestPolymorphicInterface()
+        {
+            Assert.That(TestJson.Serialize((IShape)new Circle(1.5)), Is.EqualTo("""{"kind":"circle","Radius":1.5}"""));
+            Assert.That(TestJson.Serialize((IShape)new Square { Side = 2 }), Is.EqualTo("""{"kind":"square","Side":2}"""));
+            Assert.Throws<NotSupportedException>(() => TestJson.Serialize((IShape)new Triangle()));
+
+            Assert.That(TestJson.Deserialize<IShape>("""{"kind":"circle","Radius":1.5}"""), Is.EqualTo(new Circle(1.5)));
+            var square = TestJson.Deserialize<IShape>("""{"kind":"square","Side":2}""");
+            Assert.That(square, Is.TypeOf<Square>());
+            Assert.That(((Square)square).Side, Is.EqualTo(2));
+            Assert.Throws<ParserException>(() => TestJson.Deserialize<IShape>("""{"Radius":1}"""));
+            Assert.Throws<ParserException>(() => TestJson.Deserialize<IShape>("""{"$type":"circle"}"""));
+        }
+
+        [Test]
+        public void TestPolymorphicConcreteBase()
+        {
+            Assert.That(TestJson.Serialize(new Employee { Name = "a" }), Is.EqualTo("""{"Name":"a"}"""));
+            Assert.That(TestJson.Serialize((Employee)new Manager { Name = "b", Reports = 3 }), Is.EqualTo("""{"$type":"manager","Name":"b","Reports":3}"""));
+
+            Assert.That(TestJson.Deserialize<Employee>("""{"Name":"a"}"""), Is.TypeOf<Employee>());
+            Assert.That(TestJson.Deserialize<Employee>("{}"), Is.TypeOf<Employee>());
+            var manager = TestJson.Deserialize<Employee>("""{"$type":"manager","Name":"b","Reports":3}""");
+            Assert.That(manager, Is.TypeOf<Manager>());
+            Assert.That(((Manager)manager).Reports, Is.EqualTo(3));
+
+            // the discriminator is only recognized as the first property
+            Assert.That(TestJson.Deserialize<Employee>("""{"Name":"a","$type":"manager"}"""), Is.TypeOf<Employee>());
+        }
+
+        [Test]
+        public void TestPolymorphicMembers()
+        {
+            var zoo = new Zoo
+            {
+                Animals = [new Dog { Name = "Rex" }, new Lion { Name = "Leo" }],
+                Shape = new Circle(2),
+                Staff = new() { ["boss"] = new Manager { Name = "M", Reports = 1 }, ["keeper"] = new Employee { Name = "K" } },
+            };
+
+            var json = TestJson.Serialize(zoo);
+            Assert.That(json, Is.EqualTo(
+                """{"Animals":[{"$type":"dog","Name":"Rex","GoodBoy":false},{"$type":"lion","Name":"Leo","Lives":9,"Roars":false}]""" +
+                ""","Shape":{"kind":"circle","Radius":2},"Staff":{"boss":{"$type":"manager","Name":"M","Reports":1},"keeper":{"Name":"K"}}}"""));
+
+            var z = TestJson.Deserialize<Zoo>(json);
+            Assert.That(z.Animals.Select(a => a.GetType()), Is.EqualTo(new[] { typeof(Dog), typeof(Lion) }));
+            Assert.That(z.Shape, Is.EqualTo(new Circle(2)));
+            Assert.That(z.Staff["boss"], Is.TypeOf<Manager>());
+            Assert.That(z.Staff["keeper"], Is.TypeOf<Employee>());
+            Assert.That(TestJson.Serialize(z), Is.EqualTo(json));
         }
 
         [Test]

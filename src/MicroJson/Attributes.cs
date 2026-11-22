@@ -87,6 +87,47 @@ public sealed class MicroJsonPropertyNameAttribute(string name) : Attribute
 }
 
 /// <summary>
+/// Registers a derived type of the annotated class or interface for polymorphic serialization.
+/// </summary>
+/// <remarks>
+/// When a value whose declared type is the annotated type is serialized, its runtime type's discriminator is written as the first property
+/// (named <c>$type</c> unless changed through <see cref="MicroJsonPolymorphicAttribute"/>), followed by the runtime type's properties.
+/// A value whose runtime type is not registered is written as its nearest registered base type; if there is none and the annotated type is
+/// abstract or an interface, serialization throws <see cref="NotSupportedException"/>.
+/// When deserializing, the discriminator must be the first property of the object. Without a discriminator, the annotated type itself
+/// is deserialized (which fails if it is abstract or an interface).
+/// </remarks>
+/// <param name="derivedType">The derived type, a non-abstract class or struct that derives from or implements the annotated type.</param>
+/// <param name="typeDiscriminator">The value that identifies the derived type in JSON.</param>
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Interface, AllowMultiple = true, Inherited = false)]
+[Conditional("MICROJSON_KEEP_ATTRIBUTES")]
+public sealed class MicroJsonDerivedTypeAttribute(Type derivedType, string typeDiscriminator) : Attribute
+{
+    /// <summary>
+    /// Gets the derived type.
+    /// </summary>
+    public Type DerivedType { get; } = derivedType;
+
+    /// <summary>
+    /// Gets the value that identifies the derived type in JSON.
+    /// </summary>
+    public string TypeDiscriminator { get; } = typeDiscriminator;
+}
+
+/// <summary>
+/// Configures polymorphic serialization of a class or interface with derived types registered through <see cref="MicroJsonDerivedTypeAttribute"/>.
+/// </summary>
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Interface, Inherited = false)]
+[Conditional("MICROJSON_KEEP_ATTRIBUTES")]
+public sealed class MicroJsonPolymorphicAttribute : Attribute
+{
+    /// <summary>
+    /// Gets or sets the name of the property that holds the type discriminator. The default is <c>$type</c>.
+    /// </summary>
+    public string TypeDiscriminatorPropertyName { get; set; } = "$type";
+}
+
+/// <summary>
 /// Excludes a property or field from serialization and deserialization.
 /// </summary>
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field)]

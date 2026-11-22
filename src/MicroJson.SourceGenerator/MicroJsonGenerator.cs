@@ -118,6 +118,11 @@ static class Diagnostics
         "The class '{0}' must not be generic to generate MicroJson serialization code",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 
+    public static readonly DiagnosticDescriptor InvalidDerivedType = new(
+        "MJ0007", "Invalid derived type",
+        "The derived type '{0}' registered on '{1}' is ignored: {2}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
     public static readonly DiagnosticDescriptor DuplicateName = new(
         "MJ0006", "Duplicate JSON property name",
         "The member '{0}' is ignored because another member of '{1}' already uses the JSON name '{2}'",

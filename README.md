@@ -84,7 +84,7 @@ Objects are created through a public parameterless constructor or, if there is n
 constructor (e.g. a record's primary constructor) whose parameters are matched to properties by name.
 `init` and `required` properties are supported. Properties with setters keep their default values if they are missing from the JSON.
 
-Unsupported types and members are reported as compiler diagnostics (`MJ0001`–`MJ0006`).
+Unsupported types and members are reported as compiler diagnostics (`MJ0001`–`MJ0007`).
 
 ### Options
 
@@ -102,6 +102,33 @@ public class Product
     [MicroJsonIgnore] public string? Internal { get; set; }
 }
 ```
+
+### Polymorphism
+
+Register the derived types of a class or interface with a discriminator. When a value is serialized as the base type, the discriminator
+is written as the first property:
+
+```csharp
+[MicroJsonDerivedType(typeof(Dog), "dog")]
+[MicroJsonDerivedType(typeof(Cat), "cat")]
+public abstract class Animal { public string Name { get; set; } = ""; }
+public class Dog : Animal { public bool GoodBoy { get; set; } }
+public class Cat : Animal { public int Lives { get; set; } = 9; }
+
+[MicroJsonSerializable(typeof(Animal))]
+partial class AppJson { }
+
+AppJson.Serialize((Animal)new Dog { Name = "Rex" });  // {"$type":"dog","Name":"Rex","GoodBoy":false}
+var animal = AppJson.Deserialize<Animal>("""{"$type":"cat","Name":"Tom"}""");  // Cat
+```
+
+- The discriminator property is named `$type`; use `[MicroJsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]` on the base type to change it
+  (`"@type"` and class names as discriminators match the format of MicroJson 1.x's `UseTypeInfo`).
+- When reading, the discriminator must be the first property. Without it, the base type itself is read, which fails if it is abstract or an interface.
+- A value of a type that is not registered is written as its nearest registered base type. If there is none and the base type is abstract
+  or an interface, `Serialize` throws `NotSupportedException`.
+- Polymorphism applies where the declared type is the annotated base type, e.g. a `List<Animal>` or a property of type `Animal`.
+  A value declared as `Dog` is written without a discriminator.
 
 Parsing to generic objects
 --------------------------

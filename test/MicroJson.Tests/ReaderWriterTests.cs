@@ -346,6 +346,12 @@ namespace MicroJson.Tests
             Assert.That(new MicroJsonPropertyNameAttribute("n").Name, Is.EqualTo("n"));
             Assert.That(new MicroJsonIgnoreAttribute(), Is.Not.Null);
 
+            var derived = new MicroJsonDerivedTypeAttribute(typeof(string), "s");
+            Assert.That(derived.DerivedType, Is.EqualTo(typeof(string)));
+            Assert.That(derived.TypeDiscriminator, Is.EqualTo("s"));
+            Assert.That(new MicroJsonPolymorphicAttribute().TypeDiscriminatorPropertyName, Is.EqualTo("$type"));
+            Assert.That(new MicroJsonPolymorphicAttribute { TypeDiscriminatorPropertyName = "kind" }.TypeDiscriminatorPropertyName, Is.EqualTo("kind"));
+
             var options = new MicroJsonOptionsAttribute
             {
                 PropertyNamingPolicy = MicroJsonNamingPolicy.CamelCase,
