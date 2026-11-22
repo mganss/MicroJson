@@ -6,6 +6,7 @@ using NUnit.Framework;
 //using NUnit.Framework.SyntaxHelpers;
 using System.CodeDom.Compiler;
 using System;
+using System.Linq;
 
 #pragma warning disable 1591
 namespace MicroJson
@@ -58,7 +59,7 @@ namespace MicroJson
             Assert.That(Parser.Parse("1.2") is decimal);
             Assert.That(Parser.Parse((2L << 40).ToString()) is long);
             Assert.That(Parser.Parse("2.5e100") is double);
-            Assert.Throws<ParserException>(() => Parser.Parse("1e-3"));
+            Assert.That(Parser.Parse("1e-3"), Is.EqualTo(0.001m));
             Assert.Throws<ParserException>(() => Parser.Parse(".1"));
             Assert.Throws<ParserException>(() => Parser.Parse("0."));
             Assert.Throws<ParserException>(() => Parser.Parse("1.2.3"));
@@ -162,6 +163,103 @@ namespace MicroJson
         }
 
         [Test]
+        public void TestNullsInLists()
+        {
+            Assert.That((IList)Parser.Parse("[null]"), Is.EqualTo(new object[] { null }));
+            Assert.That((IList)Parser.Parse("[1,null]"), Is.EqualTo(new object[] { 1, null }));
+            Assert.That((IList)Parser.Parse("[null,1]"), Is.EqualTo(new object[] { null, 1 }));
+            Assert.That((IList)Parser.Parse("[ null , null ]"), Is.EqualTo(new object[] { null, null }));
+            Assert.That((IList)Parser.Parse(@"[null, 1, ""1"", {}]"), Has.Count.EqualTo(4));
+            Assert.Throws<ParserException>(() => Parser.Parse("[null,]"));
+            Assert.Throws<ParserException>(() => Parser.Parse("[,null]"));
+
+            var d = (IDictionary<string, object>)Parser.Parse(@"{""a"":null,""b"":1}");
+            Assert.That(d.ContainsKey("a"));
+            Assert.That(d["a"], Is.Null);
+            Assert.That(d["b"], Is.EqualTo(1));
+        }
+
+        [Test]
+        public void TestLeadingZeros()
+        {
+            Assert.Throws<ParserException>(() => Parser.Parse("0123"));
+            Assert.Throws<ParserException>(() => Parser.Parse("-0123"));
+            Assert.Throws<ParserException>(() => Parser.Parse("00"));
+            Assert.Throws<ParserException>(() => Parser.Parse("01.5"));
+            Assert.Throws<ParserException>(() => Parser.Parse("[012]"));
+            Assert.That(Parser.Parse("0"), Is.EqualTo(0));
+            Assert.That(Parser.Parse("-0"), Is.EqualTo(0));
+            Assert.That(Parser.Parse("0.5"), Is.EqualTo(0.5m));
+            Assert.That(Parser.Parse("0e1"), Is.EqualTo(0));
+            Assert.That(Parser.Parse("10"), Is.EqualTo(10));
+        }
+
+        [Test]
+        public void TestOnlyAsciiDigits()
+        {
+            Assert.Throws<ParserException>(() => Parser.Parse("\uFF11"));       // fullwidth digit one
+            Assert.Throws<ParserException>(() => Parser.Parse("\u0661"));       // Arabic-Indic digit one
+            Assert.Throws<ParserException>(() => Parser.Parse("1\u0661"));
+            Assert.Throws<ParserException>(() => Parser.Parse("1.\u0661"));
+            Assert.Throws<ParserException>(() => Parser.Parse("1e\u0661"));
+        }
+
+        [Test]
+        public void TestLargeNumbers()
+        {
+            Assert.That(Parser.Parse("99999999999999999999"), Is.EqualTo(99999999999999999999m));
+            Assert.That(Parser.Parse("-99999999999999999999"), Is.EqualTo(-99999999999999999999m));
+            Assert.That(Parser.Parse("1E22"), Is.EqualTo(1e22m));
+            Assert.That(Parser.Parse("-123123123123123123123123123123"), Is.EqualTo(-123123123123123123123123123123d));
+            Assert.That(Parser.Parse("123e45"), Is.EqualTo(123e45d));
+            Assert.Throws<ParserException>(() => Parser.Parse("1e400"));
+            Assert.Throws<ParserException>(() => Parser.Parse("-1e400"));
+        }
+
+        [Test]
+        public void TestExponentWithoutFraction()
+        {
+            Assert.That(Parser.Parse("1e3"), Is.EqualTo(1000));
+            Assert.That(Parser.Parse("1E+2"), Is.EqualTo(100));
+            Assert.That(Parser.Parse("1e-2"), Is.EqualTo(0.01m));
+            Assert.That(Parser.Parse("1E-2"), Is.EqualTo(0.01m));
+            Assert.That(Parser.Parse("-5e-1"), Is.EqualTo(-0.5m));
+        }
+
+        static string Nested(int depth) => new string('[', depth) + new string(']', depth);
+
+        [Test]
+        public void TestMaxDepth()
+        {
+            Assert.That(new JsonParser().MaxDepth, Is.EqualTo(64));
+            Assert.DoesNotThrow(() => Parser.Parse(Nested(64)));
+            Assert.Throws<ParserException>(() => Parser.Parse(Nested(65)));
+            Assert.Throws<ParserException>(() => Parser.Parse(new string('[', 100000)));
+
+            var objects = string.Concat(Enumerable.Repeat(@"{""a"":", 65)) + "1" + new string('}', 65);
+            Assert.Throws<ParserException>(() => Parser.Parse(objects));
+
+            var parser = new JsonParser { MaxDepth = 1 };
+            Assert.DoesNotThrow(() => parser.Parse("[1, 2]"));
+            Assert.DoesNotThrow(() => parser.Parse(@"{""a"":1}"));
+            Assert.Throws<ParserException>(() => parser.Parse("[[]]"));
+            Assert.Throws<ParserException>(() => parser.Parse(@"{""a"":[]}"));
+            Assert.DoesNotThrow(() => parser.Parse("1"));
+
+            // depth is reset between calls
+            Assert.DoesNotThrow(() => parser.Parse("[]"));
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => new JsonParser { MaxDepth = 0 });
+        }
+
+        [Test]
+        public void TestDeepNestingDoesNotOverflowStack()
+        {
+            var parser = new JsonParser { MaxDepth = int.MaxValue };
+            Assert.Throws<ParserException>(() => parser.Parse(Nested(1_000_000)));
+        }
+
+        [Test]
         public void TestComplex()
         {
             var o = Parser.Parse(complexJsonString);
@@ -171,7 +269,7 @@ namespace MicroJson
         [Test]
         public void TestLogger()
         {
-            var sw = new StringWriter();
+            var sw = new StringWriter { NewLine = "\r\n" };
             var parser = new JsonParser { Logger = new TextWriterLogger(sw), CollectLineInfo = true };
             var o = parser.Parse(@"[4711,
 4712]");

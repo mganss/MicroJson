@@ -1,0 +1,2 @@
+# JSONTestSuite cases must stay byte-exact (invalid UTF-8, exact line endings)
+test/MicroJson.Tests/JSONTestSuite/test_parsing/** -text

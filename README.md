@@ -41,7 +41,16 @@ Console.WriteLine(o["I"]);                  // 4711
 Console.WriteLine(((IList<object?>)o["L"]!).Count); // 3
 ```
 
+Integers become `int` or `long` if they fit, other numbers become `decimal` or, if out of `decimal`'s range, `double`.
+Numbers outside of `double`'s range are rejected.
+
 Set `CollectLineInfo` to `true` to get line and column numbers in `ParserException`.
+
+Nesting of arrays and objects is limited to `MaxDepth` levels (default 64) to protect against stack exhaustion
+from malicious input.
+
+The parser is strict [RFC 8259](https://www.rfc-editor.org/rfc/rfc8259) and passes all accept/reject cases of
+[JSONTestSuite](https://github.com/nst/JSONTestSuite).
 
 License
 -------

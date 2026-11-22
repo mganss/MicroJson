@@ -28,6 +28,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace MicroJson
@@ -80,6 +81,8 @@ namespace MicroJson
         int Pos { get; set; }
         int Line { get; set; }
         int Col { get; set; }
+        int Depth { get; set; }
+        int maxDepth = 64;
 
         /// <summary>
         /// Gets or sets the logger.
@@ -98,6 +101,22 @@ namespace MicroJson
         public bool CollectLineInfo { get; set; }
 
         /// <summary>
+        /// Gets or sets the maximum nesting depth of arrays and objects.
+        /// Input that is nested deeper causes a <see cref="ParserException"/>.
+        /// The default is 64.
+        /// </summary>
+        /// <exception cref="ArgumentOutOfRangeException">The value is less than 1.</exception>
+        public int MaxDepth
+        {
+            get => maxDepth;
+            set
+            {
+                ArgumentOutOfRangeException.ThrowIfLessThan(value, 1);
+                maxDepth = value;
+            }
+        }
+
+        /// <summary>
         /// Parse the specified JSON text.
         /// </summary>
         /// <param name='text'>
@@ -113,6 +132,7 @@ namespace MicroJson
             Pos = 0;
             Line = 1;
             Col = 1;
+            Depth = 0;
 
             var o = Value();
 
@@ -167,23 +187,15 @@ namespace MicroJson
             Pos += n;
         }
 
-        private string? Accept(string s)
+        private bool Accept(string s)
         {
-            var len = s.Length;
-
-            if (Pos + len > InputLength)
+            if (Input.AsSpan(Pos).StartsWith(s, StringComparison.Ordinal))
             {
-                return null;
+                AdvanceInput(s.Length);
+                return true;
             }
 
-            if (Input.IndexOf(s, Pos, len, StringComparison.Ordinal) != -1)
-            {
-                var match = Input.Substring(Pos, len);
-                AdvanceInput(len);
-                return match;
-            }
-
-            return null;
+            return false;
         }
 
         private char Expect(char c)
@@ -224,7 +236,7 @@ namespace MicroJson
                 AdvanceInput(1);
                 return Dictionary();
             }
-            else if (char.IsDigit(nextChar) || nextChar == '-')
+            else if (char.IsAsciiDigit(nextChar) || nextChar == '-')
             {
                 return Number();
             }
@@ -237,87 +249,83 @@ namespace MicroJson
         private object Number()
         {
             int currentPos = Pos;
-            bool dotSeen = false;
+            bool isInteger = true;
 
-            Accept(c => c == '-', ref currentPos);
-            ExpectDigits(ref currentPos);
+            if (IsAt(currentPos, '-')) currentPos++;
 
-            if (Accept(c => c == '.', ref currentPos))
+            // RFC 8259: int = zero / ( digit1-9 *DIGIT )
+            if (IsAt(currentPos, '0'))
             {
-                dotSeen = true;
-                ExpectDigits(ref currentPos);
-            }
-
-            if (Accept(c => (c == 'e' || c == 'E'), ref currentPos))
-            {
-                Accept(c => (c == '-' || c == '+'), ref currentPos);
-                ExpectDigits(ref currentPos);
-            }
-
-            var len = currentPos - Pos;
-            var num = Input.Substring(Pos, len);
-
-            if (dotSeen)
-            {
-                decimal d;
-                if (decimal.TryParse(num, NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign | NumberStyles.AllowExponent, CultureInfo.InvariantCulture, out d))
-                {
-                    WriteLineLog("decimal: {0}", d);
-                    AdvanceInput(len);
-                    return d;
-                }
-                else
-                {
-                    double dbl;
-                    if (double.TryParse(num, NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign | NumberStyles.AllowExponent, CultureInfo.InvariantCulture, out dbl) && double.IsFinite(dbl))
-                    {
-                        WriteLineLog("double: {0}", dbl);
-                        AdvanceInput(len);
-                        return dbl;
-                    }
-
-                    throw BuildParserException("cannot parse decimal number");
-                }
+                currentPos++;
+                if (currentPos < InputLength && char.IsAsciiDigit(Input[currentPos]))
+                    throw BuildParserException("leading zero in number");
             }
             else
             {
-                int i;
-                if (int.TryParse(num, NumberStyles.AllowLeadingSign | NumberStyles.AllowExponent, CultureInfo.InvariantCulture, out i))
-                {
-                    WriteLineLog("int: {0}", i);
-                    AdvanceInput(len);
-                    return i;
-                }
-                else
-                {
-                    long l;
-                    if (long.TryParse(num, NumberStyles.AllowLeadingSign | NumberStyles.AllowExponent, CultureInfo.InvariantCulture, out l))
-                    {
-                        WriteLineLog("long: {0}", l);
-                        AdvanceInput(len);
-                        return l;
-                    }
-
-                    throw BuildParserException("cannot parse integer number");
-                }
+                ExpectDigits(ref currentPos);
             }
+
+            if (IsAt(currentPos, '.'))
+            {
+                currentPos++;
+                isInteger = false;
+                ExpectDigits(ref currentPos);
+            }
+
+            if (IsAt(currentPos, 'e') || IsAt(currentPos, 'E'))
+            {
+                currentPos++;
+                if (IsAt(currentPos, '+') || IsAt(currentPos, '-')) currentPos++;
+                ExpectDigits(ref currentPos);
+            }
+
+            const NumberStyles IntegerStyles = NumberStyles.AllowLeadingSign | NumberStyles.AllowExponent;
+            const NumberStyles FloatStyles = IntegerStyles | NumberStyles.AllowDecimalPoint;
+
+            var len = currentPos - Pos;
+            var num = Input.AsSpan(Pos, len);
+            object result;
+
+            // Numbers without a fraction become int or long if they fit (an exponent is allowed, e.g. 1e3),
+            // everything else becomes decimal or, if out of decimal's range, double.
+            if (isInteger && int.TryParse(num, IntegerStyles, CultureInfo.InvariantCulture, out var i))
+            {
+                WriteLineLog("int: {0}", i);
+                result = i;
+            }
+            else if (isInteger && long.TryParse(num, IntegerStyles, CultureInfo.InvariantCulture, out var l))
+            {
+                WriteLineLog("long: {0}", l);
+                result = l;
+            }
+            else if (decimal.TryParse(num, FloatStyles, CultureInfo.InvariantCulture, out var d))
+            {
+                WriteLineLog("decimal: {0}", d);
+                result = d;
+            }
+            else if (double.TryParse(num, FloatStyles, CultureInfo.InvariantCulture, out var dbl) && double.IsFinite(dbl))
+            {
+                WriteLineLog("double: {0}", dbl);
+                result = dbl;
+            }
+            else
+            {
+                throw BuildParserException("number out of range");
+            }
+
+            AdvanceInput(len);
+            return result;
         }
 
-        private bool Accept(Predicate<char> predicate, ref int pos)
+        private bool IsAt(int pos, char c)
         {
-            if (pos < InputLength && predicate(Input[pos]))
-            {
-                pos++;
-                return true;
-            }
-
-            return false;
+            return pos < InputLength && Input[pos] == c;
         }
 
         private void ExpectDigits(ref int pos)
         {
             int start = pos;
-            while (pos < InputLength && char.IsDigit(Input[pos])) pos++;
+            while (pos < InputLength && char.IsAsciiDigit(Input[pos])) pos++;
             if (start == pos) throw BuildParserException("not a number");
         }
 
@@ -382,7 +390,7 @@ namespace MicroJson
                             else
                             {
                                 int u;
-                                if (!int.TryParse(Input.Substring(currentPos - 3, 4), NumberStyles.AllowHexSpecifier, NumberFormatInfo.InvariantInfo, out u))
+                                if (!int.TryParse(Input.AsSpan(currentPos - 3, 4), NumberStyles.AllowHexSpecifier, NumberFormatInfo.InvariantInfo, out u))
                                     throw BuildParserException("not a well-formed unicode escape sequence in string");
                                 sb.Append((char)u);
                             }
@@ -406,19 +414,19 @@ namespace MicroJson
 
         private object? Literal()
         {
-            if (Accept("true") != null)
+            if (Accept("true"))
             {
                 WriteLineLog("bool: true");
                 return true;
             }
 
-            if (Accept("false") != null)
+            if (Accept("false"))
             {
                 WriteLineLog("bool: false");
                 return false;
             }
 
-            if (Accept("null") != null)
+            if (Accept("null"))
             {
                 WriteLineLog("null");
                 return null;
@@ -427,90 +435,81 @@ namespace MicroJson
             throw BuildParserException("unknown token");
         }
 
-        private IList<object> List()
+        private IList<object?> List()
         {
+            EnterContainer();
             WriteLineLog("list: [");
 
-            List<object> list = new List<object>();
+            var list = new List<object?>();
 
             SkipWhitespace();
             if (IsNext(']'))
             {
-                AdvanceInput(1); return list;
+                AdvanceInput(1);
             }
-
-            object? obj = null;
-            do
+            else
             {
-                SkipWhitespace();
-                obj = Value();
-                if (obj != null)
+                while (true)
                 {
-                    list.Add(obj);
+                    list.Add(Value());
                     SkipWhitespace();
-                    if (IsNext(']')) break;
-                    Expect(',');
+                    if (!IsNext(',')) break;
+                    AdvanceInput(1);
                 }
-            }
-            while (obj != null);
 
-            Expect(']');
+                Expect(']');
+            }
 
             WriteLineLog("]");
+            Depth--;
 
             return list;
         }
 
         private IDictionary<string, object?> Dictionary()
         {
+            EnterContainer();
             WriteLineLog("Dictionary: {");
 
-            Dictionary<string, object?> dict = new Dictionary<string, object?>();
+            var dict = new Dictionary<string, object?>();
 
             SkipWhitespace();
             if (IsNext('}'))
             {
-                AdvanceInput(1); return dict;
+                AdvanceInput(1);
             }
-
-            KeyValuePair<string, object?>? kvp = null;
-            do
+            else
             {
-                SkipWhitespace();
-
-                kvp = KeyValuePair();
-
-                if (kvp.HasValue)
+                while (true)
                 {
-                    dict[kvp.Value.Key] = kvp.Value.Value;
+                    SkipWhitespace();
+                    Expect('"');
+                    var key = String();
+                    SkipWhitespace();
+                    Expect(':');
+                    dict[key] = Value();
+                    SkipWhitespace();
+                    if (!IsNext(',')) break;
+                    AdvanceInput(1);
                 }
 
-                SkipWhitespace();
-                if (IsNext('}')) break;
-                Expect(',');
+                Expect('}');
             }
-            while (kvp != null);
-
-            Expect('}');
 
             WriteLineLog("}");
+            Depth--;
 
             return dict;
         }
 
-        private KeyValuePair<string, object?>? KeyValuePair()
+        private void EnterContainer()
         {
-            Expect('"');
+            if (++Depth > MaxDepth)
+                throw BuildParserException("maximum depth exceeded");
 
-            var key = String();
-
-            SkipWhitespace();
-
-            Expect(':');
-
-            var obj = Value();
-
-            return new KeyValuePair<string, object?>(key, obj);
+            // Guards against a stack overflow (which cannot be caught) when MaxDepth is set very high.
+            if (!RuntimeHelpers.TryEnsureSufficientExecutionStack())
+                throw BuildParserException("insufficient stack to continue parsing");
         }
 
         private void SkipWhitespace()
