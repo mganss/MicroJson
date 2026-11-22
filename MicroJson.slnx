@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MicroJson/MicroJson.csproj" />
+  </Folder>
+  <Folder Name="/test/">
+    <Project Path="test/MicroJson.Tests/MicroJson.Tests.csproj" />
+  </Folder>
+</Solution>
