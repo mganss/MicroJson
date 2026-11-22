@@ -14,11 +14,6 @@ and trimming. Use it where you need JSON support and want the smallest binary po
 Serialization code is generated at compile time by a source generator that ships in the package. There is no reflection
 at runtime, so there are no trimming or AOT warnings, and only the code your types actually need ends up in your binary.
 
-> [!NOTE]
-> MicroJson 2.0 is a rewrite. The reflection-based `JsonSerializer` from 1.x has been removed because it is
-> incompatible with trimming and Native AOT; use the source generator described below instead.
-> The 1.x releases remain available on [NuGet](https://www.nuget.org/packages/MicroJson).
-
 Binary size
 -----------
 
@@ -32,8 +27,7 @@ and serialize it back) to a Native AOT hello world, measured on win-x64 with .NE
 | MicroJson (`JsonParser` and `JsonWriter.WriteValue`, `MicroJson.UseDecimal` off) | 71.5 KB |
 | System.Text.Json (source-generated serialization) | 1237 KB |
 
-The sample apps are in [samples/AotSize](samples/AotSize); every CI build publishes them for linux-x64,
-fails on any trimming or AOT warning, and fails if MicroJson's size exceeds a limit. The results are in the build summary.
+The sample apps are in [samples/AotSize](samples/AotSize).
 
 Tips for small binaries:
 
