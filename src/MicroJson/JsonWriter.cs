@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Numerics;
 using System.Text;
 
 namespace MicroJson;
@@ -107,19 +106,129 @@ public sealed class JsonWriter
         needComma = true;
     }
 
-    /// <summary>
-    /// Writes a number using the invariant culture.
-    /// </summary>
-    /// <typeparam name="T">The numeric type, e.g. <see cref="int"/> or <see cref="double"/>.</typeparam>
+    // The number overloads are deliberately not a single generic method constrained to INumberBase<T> or ISpanFormattable:
+    // with Native AOT (.NET 10), a constrained generic call to TryFormat on decimal adds about 70 KB to the binary,
+    // while the direct call adds about 4 KB. The AOT compiler's scanner treats the constrained call as boxing the decimal.
+    // A boxed decimal needs decimal's IConvertible.ToInt16 (CoreLib calls that interface method in every app), which calls
+    // decimal.Round, which boxes a MidpointRounding, which pulls in Enum formatting and the reflection code it uses.
+
+    // enough for any of the supported types, e.g. decimal.MinValue or double.MinValue in round-trip format
+    const int MaxNumberLength = 32;
+
+    /// <summary>Writes a number.</summary>
+    /// <param name="value">The number.</param>
+    public void WriteNumber(sbyte value)
+    {
+        Span<char> buffer = stackalloc char[MaxNumberLength];
+        value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture);
+        WriteRaw(buffer[..written]);
+    }
+
+    /// <summary>Writes a number.</summary>
+    /// <param name="value">The number.</param>
+    public void WriteNumber(byte value)
+    {
+        Span<char> buffer = stackalloc char[MaxNumberLength];
+        value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture);
+        WriteRaw(buffer[..written]);
+    }
+
+    /// <summary>Writes a number.</summary>
+    /// <param name="value">The number.</param>
+    public void WriteNumber(short value)
+    {
+        Span<char> buffer = stackalloc char[MaxNumberLength];
+        value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture);
+        WriteRaw(buffer[..written]);
+    }
+
+    /// <summary>Writes a number.</summary>
+    /// <param name="value">The number.</param>
+    public void WriteNumber(ushort value)
+    {
+        Span<char> buffer = stackalloc char[MaxNumberLength];
+        value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture);
+        WriteRaw(buffer[..written]);
+    }
+
+    /// <summary>Writes a number.</summary>
+    /// <param name="value">The number.</param>
+    public void WriteNumber(int value)
+    {
+        Span<char> buffer = stackalloc char[MaxNumberLength];
+        value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture);
+        WriteRaw(buffer[..written]);
+    }
+
+    /// <summary>Writes a number.</summary>
+    /// <param name="value">The number.</param>
+    public void WriteNumber(uint value)
+    {
+        Span<char> buffer = stackalloc char[MaxNumberLength];
+        value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture);
+        WriteRaw(buffer[..written]);
+    }
+
+    /// <summary>Writes a number.</summary>
+    /// <param name="value">The number.</param>
+    public void WriteNumber(long value)
+    {
+        Span<char> buffer = stackalloc char[MaxNumberLength];
+        value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture);
+        WriteRaw(buffer[..written]);
+    }
+
+    /// <summary>Writes a number.</summary>
+    /// <param name="value">The number.</param>
+    public void WriteNumber(ulong value)
+    {
+        Span<char> buffer = stackalloc char[MaxNumberLength];
+        value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture);
+        WriteRaw(buffer[..written]);
+    }
+
+    /// <summary>Writes a number in the shortest form that round-trips.</summary>
     /// <param name="value">The number.</param>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="value"/> is NaN or infinity, which JSON cannot represent.</exception>
-    public void WriteNumber<T>(T value) where T : INumberBase<T>
+    public void WriteNumber(float value)
     {
-        if (!T.IsFinite(value))
-            throw new ArgumentOutOfRangeException(nameof(value), "JSON does not support NaN or infinity.");
+        if (!float.IsFinite(value))
+            throw NotFinite(nameof(value));
 
+        Span<char> buffer = stackalloc char[MaxNumberLength];
+        value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture);
+        WriteRaw(buffer[..written]);
+    }
+
+    /// <summary>Writes a number in the shortest form that round-trips.</summary>
+    /// <param name="value">The number.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="value"/> is NaN or infinity, which JSON cannot represent.</exception>
+    public void WriteNumber(double value)
+    {
+        if (!double.IsFinite(value))
+            throw NotFinite(nameof(value));
+
+        Span<char> buffer = stackalloc char[MaxNumberLength];
+        value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture);
+        WriteRaw(buffer[..written]);
+    }
+
+    /// <summary>Writes a number.</summary>
+    /// <param name="value">The number.</param>
+    public void WriteNumber(decimal value)
+    {
+        Span<char> buffer = stackalloc char[MaxNumberLength];
+        value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture);
+        WriteRaw(buffer[..written]);
+    }
+
+    private static ArgumentOutOfRangeException NotFinite(string paramName) =>
+        new(paramName, "JSON does not support NaN or infinity.");
+
+    private void WriteRaw(ReadOnlySpan<char> value)
+    {
         BeginValue();
-        AppendFormatted(value, default);
+        sb.Append(value);
         needComma = true;
     }
 
@@ -141,7 +250,7 @@ public sealed class JsonWriter
 
     /// <summary>
     /// Writes a generic CLR object as produced by <see cref="JsonParser"/>: <c>null</c>, <see cref="string"/>, <see cref="bool"/>,
-    /// numbers, <see cref="IDictionary{TKey, TValue}"/> of <see cref="string"/> and <see cref="object"/>,
+    /// numbers (including <see cref="JsonNumber"/>, which is written unchanged), <see cref="IDictionary{TKey, TValue}"/> of <see cref="string"/> and <see cref="object"/>,
     /// and <see cref="IEnumerable{T}"/> of <see cref="object"/>.
     /// Dictionary keys are written in their enumeration order.
     /// </summary>
@@ -165,6 +274,12 @@ public sealed class JsonWriter
                 break;
             case long l:
                 WriteNumber(l);
+                break;
+            case ulong u:
+                WriteNumber(u);
+                break;
+            case JsonNumber n:
+                WriteRaw(n.Text);
                 break;
             case decimal m:
                 WriteNumber(m);

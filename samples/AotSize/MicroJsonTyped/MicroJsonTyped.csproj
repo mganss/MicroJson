@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- equivalent to a PackageReference to MicroJson: the library plus its source generator -->
+  <ItemGroup>
+    <ProjectReference Include="../../../src/MicroJson/MicroJson.csproj" />
+    <ProjectReference Include="../../../src/MicroJson.SourceGenerator/MicroJson.SourceGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

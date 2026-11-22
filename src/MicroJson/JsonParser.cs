@@ -93,6 +93,13 @@ namespace MicroJson
         public bool CollectLineInfo { get; set; }
 
         /// <summary>
+        /// Gets or sets a value indicating whether to return a <see cref="JsonNumber"/> with the original text for numbers
+        /// that would otherwise lose digits (be rounded or become 0) or be rejected as out of range.
+        /// The default is <c>false</c>.
+        /// </summary>
+        public bool PreserveInexactNumbers { get; set; }
+
+        /// <summary>
         /// Gets or sets the maximum nesting depth of arrays and objects.
         /// Input that is nested deeper causes a <see cref="ParserException"/>.
         /// The default is 64.
@@ -119,7 +126,7 @@ namespace MicroJson
             if (text == null)
                 throw new ParserException("Parse error: input is null.", 0, 0);
 
-            var reader = new JsonReader(text) { MaxDepth = MaxDepth, CollectLineInfo = CollectLineInfo, Logger = Logger };
+            var reader = new JsonReader(text) { MaxDepth = MaxDepth, CollectLineInfo = CollectLineInfo, Logger = Logger, PreserveInexactNumbers = PreserveInexactNumbers };
             var value = reader.ReadValue();
             reader.ReadEndOfInput();
 

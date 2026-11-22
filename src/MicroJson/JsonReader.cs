@@ -47,6 +47,19 @@ public sealed class JsonReader
 {
     const NumberStyles IntegerStyles = NumberStyles.AllowLeadingSign | NumberStyles.AllowExponent;
     const NumberStyles FloatStyles = IntegerStyles | NumberStyles.AllowDecimalPoint;
+    const string UseDecimalSwitch = "MicroJson.UseDecimal";
+
+    /// <summary>
+    /// Gets a value indicating whether <see cref="ReadValue"/> returns <see cref="decimal"/> for numbers that are not integers.
+    /// If <c>false</c>, they are returned as <see cref="double"/> instead.
+    /// </summary>
+    /// <remarks>
+    /// Set through the <c>MicroJson.UseDecimal</c> runtime configuration switch (default <c>true</c>). When the switch is set to <c>false</c>
+    /// in the project file with <c>Trim="true"</c>, the trimmer and the Native AOT compiler remove the decimal code, which makes the binary
+    /// about 70 KB smaller: a boxed <see cref="decimal"/> pulls in enum formatting and reflection code.
+    /// </remarks>
+    [FeatureSwitchDefinition(UseDecimalSwitch)]
+    internal static bool UseDecimal => !AppContext.TryGetSwitch(UseDecimalSwitch, out var enabled) || enabled;
 
     readonly string input;
     readonly int maxDepth = 64;
@@ -91,6 +104,13 @@ public sealed class JsonReader
     /// Gets the logger that receives a trace of the values read by <see cref="ReadValue"/>.
     /// </summary>
     public ILogger? Logger { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether <see cref="ReadValue"/> returns a <see cref="JsonNumber"/> with the original text
+    /// for numbers that would otherwise lose digits (be rounded or become 0) or be rejected as out of range.
+    /// The default is <c>false</c>.
+    /// </summary>
+    public bool PreserveInexactNumbers { get; init; }
 
     /// <summary>
     /// Returns the type of the next token without consuming it.
@@ -226,12 +246,139 @@ public sealed class JsonReader
         var num = ScanNumber(out _);
 
         if (!T.TryParse(num, FloatStyles, CultureInfo.InvariantCulture, out var value) || !T.IsFinite(value))
-            throw CreateException("number out of range");
+            throw CreateException(IsIntegerType<T>() && !IsIntegral(num) ? "expected an integer" : "number out of range");
 
         Advance(num.Length);
 
         return value;
     }
+
+    // typeof comparisons are constant for each instantiation, so this compiles to true or false without reflection
+    private static bool IsIntegerType<T>() =>
+        typeof(T) == typeof(int) || typeof(T) == typeof(long) || typeof(T) == typeof(short) || typeof(T) == typeof(sbyte)
+        || typeof(T) == typeof(uint) || typeof(T) == typeof(ulong) || typeof(T) == typeof(ushort) || typeof(T) == typeof(byte);
+
+    // The following methods work on the digits of a number so that no floating-point parsing code is needed.
+
+    /// <summary>
+    /// Analyzes a valid JSON number: its value is ± (significant digits) × 10^<paramref name="exponent"/>,
+    /// where the significant digits have no leading or trailing zeros.
+    /// </summary>
+    /// <param name="num">The number.</param>
+    /// <param name="digits">Receives the first significant digits (as many as fit).</param>
+    /// <param name="exponent">The power of ten of the last significant digit.</param>
+    /// <returns>The number of significant digits, 0 if the number is zero.</returns>
+    private static int AnalyzeDigits(ReadOnlySpan<char> num, Span<char> digits, out long exponent)
+    {
+        int i = num[0] == '-' ? 1 : 0;
+        int position = 0; // position of the current digit within the integer and fraction digits
+        int integerLength = 0;
+        int first = -1; // positions of the first and last non-zero digit
+        int last = -1;
+        int stored = 0;
+        bool inFraction = false;
+
+        for (; i < num.Length; i++)
+        {
+            var c = num[i];
+
+            if (c == '.')
+            {
+                inFraction = true;
+                continue;
+            }
+
+            if (!char.IsAsciiDigit(c))
+                break;
+
+            if (!inFraction)
+                integerLength++;
+
+            if (c != '0')
+            {
+                if (first < 0) first = position;
+                last = position;
+            }
+
+            if (first >= 0 && stored < digits.Length)
+                digits[stored++] = c;
+
+            position++;
+        }
+
+        long e = 0;
+
+        if (i < num.Length)
+        {
+            // e or E, optional sign, digits (saturated, the exact value of a huge exponent does not matter)
+            i++;
+            bool negative = num[i] == '-';
+            if (num[i] == '-' || num[i] == '+') i++;
+            for (; i < num.Length; i++)
+                e = Math.Min(e * 10 + (num[i] - '0'), 1_000_000);
+            if (negative) e = -e;
+        }
+
+        if (first < 0)
+        {
+            exponent = 0;
+            return 0;
+        }
+
+        exponent = integerLength + e - last - 1;
+
+        return last - first + 1;
+    }
+
+    /// <summary>
+    /// Determines whether a number is a whole number, e.g. <c>1.5</c> and <c>15e-2</c> are not, <c>1.0</c> and <c>1.50e1</c> are.
+    /// </summary>
+    private static bool IsIntegral(ReadOnlySpan<char> num) =>
+        AnalyzeDigits(num, default, out var exponent) == 0 || exponent >= 0;
+
+    // 2^96 - 1, the largest mantissa of a decimal
+    const string MaxDecimalMantissa = "79228162514264337593543950335";
+
+    /// <summary>
+    /// Determines whether a number can be represented exactly as a <see cref="decimal"/>, i.e. as m × 10^-s
+    /// with m &lt; 2^96 and 0 &lt;= s &lt;= 28.
+    /// </summary>
+    private static bool FitsDecimal(ReadOnlySpan<char> num)
+    {
+        Span<char> digits = stackalloc char[MaxDecimalMantissa.Length];
+        var count = AnalyzeDigits(num, digits, out var exponent);
+
+        if (count == 0)
+            return true;
+
+        // for whole numbers, trailing zeros are part of the mantissa
+        long mantissaLength = exponent >= 0 ? count + exponent : count;
+
+        if (exponent < -28 || mantissaLength > MaxDecimalMantissa.Length)
+            return false;
+
+        if (mantissaLength < MaxDecimalMantissa.Length)
+            return true;
+
+        for (int k = 0; k < MaxDecimalMantissa.Length; k++)
+        {
+            var c = k < count ? digits[k] : '0';
+            if (c != MaxDecimalMantissa[k])
+                return c < MaxDecimalMantissa[k];
+        }
+
+        return true;
+    }
+
+    // the smallest positive double that is not subnormal
+    const double MinNormalDouble = 2.2250738585072014E-308;
+
+    /// <summary>
+    /// Determines whether a number survives the conversion to <see cref="double"/> and back without losing digits:
+    /// this is guaranteed for up to 15 significant digits unless the value is subnormal.
+    /// </summary>
+    private static bool FitsDouble(ReadOnlySpan<char> num, double value) =>
+        AnalyzeDigits(num, default, out _) is var count && (count == 0 || (count <= 15 && Math.Abs(value) >= MinNormalDouble));
 
     /// <summary>
     /// Reads a string containing a date and time in ISO 8601 format.
@@ -266,8 +413,9 @@ public sealed class JsonReader
 
     /// <summary>
     /// Reads any value into generic CLR objects: objects become <see cref="IDictionary{TKey, TValue}"/> of <see cref="string"/> and <see cref="object"/>,
-    /// arrays become <see cref="IList{T}"/> of <see cref="object"/>, numbers become <see cref="int"/>, <see cref="long"/>, <see cref="decimal"/>,
-    /// or <see cref="double"/>.
+    /// arrays become <see cref="IList{T}"/> of <see cref="object"/>, integers become <see cref="int"/>, <see cref="long"/>, or <see cref="ulong"/>
+    /// if they fit, other numbers become <see cref="decimal"/> (see <see cref="UseDecimal"/>) or <see cref="double"/>,
+    /// or <see cref="JsonNumber"/> (see <see cref="PreserveInexactNumbers"/>).
     /// </summary>
     public object? ReadValue()
     {
@@ -418,8 +566,8 @@ public sealed class JsonReader
         var num = ScanNumber(out var isInteger);
         object result;
 
-        // Numbers without a fraction become int or long if they fit (an exponent is allowed, e.g. 1e3),
-        // everything else becomes decimal or, if out of decimal's range, double.
+        // Numbers without a fraction become int, long, or ulong if they fit (an exponent is allowed, e.g. 1e3),
+        // everything else becomes decimal (unless disabled through the feature switch) or, if out of decimal's range, double.
         if (isInteger && int.TryParse(num, IntegerStyles, CultureInfo.InvariantCulture, out var i))
         {
             Log("int: {0}", i);
@@ -430,15 +578,28 @@ public sealed class JsonReader
             Log("long: {0}", l);
             result = l;
         }
-        else if (decimal.TryParse(num, FloatStyles, CultureInfo.InvariantCulture, out var d))
+        else if (isInteger && ulong.TryParse(num, IntegerStyles, CultureInfo.InvariantCulture, out var ul))
+        {
+            // positive integers between long.MaxValue and ulong.MaxValue, exact even if decimal is turned off
+            Log("ulong: {0}", ul);
+            result = ul;
+        }
+        else if (UseDecimal && (!PreserveInexactNumbers || FitsDecimal(num)) && decimal.TryParse(num, FloatStyles, CultureInfo.InvariantCulture, out var d))
         {
             Log("decimal: {0}", d);
             result = d;
         }
-        else if (double.TryParse(num, FloatStyles, CultureInfo.InvariantCulture, out var dbl) && double.IsFinite(dbl))
+        else if (double.TryParse(num, FloatStyles, CultureInfo.InvariantCulture, out var dbl) && double.IsFinite(dbl)
+            && (!PreserveInexactNumbers || FitsDouble(num, dbl)))
         {
             Log("double: {0}", dbl);
             result = dbl;
+        }
+        else if (PreserveInexactNumbers)
+        {
+            var text = num.ToString();
+            Log("number: {0}", text);
+            result = new JsonNumber(text, validated: true);
         }
         else
         {

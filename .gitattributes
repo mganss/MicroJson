@@ -1,2 +1,5 @@
 # JSONTestSuite cases must stay byte-exact (invalid UTF-8, exact line endings)
 test/MicroJson.Tests/JSONTestSuite/test_parsing/** -text
+
+# shell scripts must keep LF line endings to run under bash
+*.sh text eol=lf

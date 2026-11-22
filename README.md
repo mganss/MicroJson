@@ -19,6 +19,32 @@ at runtime, so there are no trimming or AOT warnings, and only the code your typ
 > incompatible with trimming and Native AOT; use the source generator described below instead.
 > The 1.x releases remain available on [NuGet](https://www.nuget.org/packages/MicroJson).
 
+Binary size
+-----------
+
+Size added by the same small program (deserialize an object with a string, an int, and a list of strings, modify it,
+and serialize it back) to a Native AOT hello world, measured on win-x64 with .NET 10, `InvariantGlobalization`, and `UseSystemResourceKeys`:
+
+| | Added to baseline |
+|---|---:|
+| MicroJson (source-generated serialization) | 22 KB |
+| MicroJson (`JsonParser` and `JsonWriter.WriteValue`) | 150 KB |
+| MicroJson (`JsonParser` and `JsonWriter.WriteValue`, `MicroJson.UseDecimal` off) | 71.5 KB |
+| System.Text.Json (source-generated serialization) | 1237 KB |
+
+The sample apps are in [samples/AotSize](samples/AotSize); every CI build publishes them for linux-x64,
+fails on any trimming or AOT warning, and fails if MicroJson's size exceeds a limit. The results are in the build summary.
+
+Tips for small binaries:
+
+- Prefer the source generator over `JsonParser`. If you use `JsonParser`, consider turning off `decimal` numbers (see below):
+  a boxed `decimal` costs about 75 KB, because through `decimal`'s `IConvertible` implementation it pulls in enum formatting
+  and the reflection code that uses.
+- Only the types you use cost space, and some of .NET's own code is large: `decimal` and `double` parsing and formatting
+  add tens of KB, while formatting a `DateTime` as ISO 8601 adds about 230 KB and parsing one about 260 KB
+  (measured without MicroJson). If size matters most, prefer e.g. Unix timestamps in a `long` over date/time types.
+- Set `InvariantGlobalization` and `UseSystemResourceKeys` in your project.
+
 Serialization
 -------------
 
@@ -87,7 +113,7 @@ Parsing to generic objects
 --------------------------
 
 `JsonParser` parses JSON text into generic CLR objects: JSON objects become `IDictionary<string, object?>`,
-arrays become `IList<object?>`, strings become `string`, numbers become `int`, `long`, `decimal` or `double`,
+arrays become `IList<object?>`, strings become `string`, numbers become `int`, `long`, `ulong`, `decimal` or `double`,
 and `true`/`false`/`null` become `bool` and `null`.
 
 ```csharp
@@ -108,8 +134,34 @@ Console.WriteLine(o["I"]);                  // 4711
 Console.WriteLine(((IList<object?>)o["L"]!).Count); // 3
 ```
 
-Integers become `int` or `long` if they fit, other numbers become `decimal` or, if out of `decimal`'s range, `double`.
-Numbers outside of `double`'s range are rejected.
+Integers become `int`, `long`, or `ulong` (the smallest that fits), other numbers become `decimal` or, if out of
+`decimal`'s range, `double`. Numbers outside of `double`'s range are rejected. Precision beyond what the type can hold
+(28–29 significant digits for `decimal`, 15–17 for `double`) is rounded, and numbers too small for the type become 0.
+
+To keep such numbers exactly, set `PreserveInexactNumbers`. Numbers that would be rounded, become 0, or be rejected as out of range
+are then returned as `JsonNumber`, which holds the original text (`Text`, `TryGetDouble`, `TryGetDecimal`).
+`JsonWriter.WriteValue` writes a `JsonNumber` unchanged, so the numbers survive a round trip:
+
+```csharp
+var parser = new JsonParser { PreserveInexactNumbers = true };
+var values = (IList<object?>)parser.Parse("[0.1, 1e400, 123456789012345678901234567890]")!;
+// decimal 0.1, JsonNumber "1e400", JsonNumber "123456789012345678901234567890"
+```
+
+A number is kept as `JsonNumber` only if no other type holds all of its digits: with `decimal`, up to 28–29 significant digits and
+28 decimal places; otherwise (and with `MicroJson.UseDecimal` off) `double` with up to 15 significant digits.
+
+In generated serialization code, numbers are read directly into the member's type. A number that doesn't fit the type is
+rejected, as is a fraction read into an integer type (`1.0` and `1e3` are accepted for integers).
+
+To get `double` instead of `decimal`, turn off the `MicroJson.UseDecimal` feature switch in your project file.
+With `Trim="true"`, trimming and Native AOT remove the `decimal` code, which makes the binary about 75 KB smaller:
+
+```xml
+<ItemGroup>
+  <RuntimeHostConfigurationOption Include="MicroJson.UseDecimal" Value="false" Trim="true" />
+</ItemGroup>
+```
 
 To write generic objects back to JSON, use `JsonWriter.WriteValue`:
 
