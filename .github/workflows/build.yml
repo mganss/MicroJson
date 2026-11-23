@@ -62,6 +62,15 @@ jobs:
           /d:sonar.host.url="https://sonarcloud.io"
           /d:sonar.token="$SONAR_TOKEN"
           /d:sonar.cs.opencover.reportsPaths="${{ github.workspace }}/coverage.xml"
+          /d:sonar.issue.ignore.multicriteria="complexity,goto,literals,polyfill"
+          /d:sonar.issue.ignore.multicriteria.complexity.ruleKey="csharpsquid:S3776"
+          /d:sonar.issue.ignore.multicriteria.complexity.resourceKey="**/*"
+          /d:sonar.issue.ignore.multicriteria.goto.ruleKey="csharpsquid:S907"
+          /d:sonar.issue.ignore.multicriteria.goto.resourceKey="**/*"
+          /d:sonar.issue.ignore.multicriteria.literals.ruleKey="csharpsquid:S1192"
+          /d:sonar.issue.ignore.multicriteria.literals.resourceKey="src/MicroJson.SourceGenerator/**/*"
+          /d:sonar.issue.ignore.multicriteria.polyfill.ruleKey="csharpsquid:S2094"
+          /d:sonar.issue.ignore.multicriteria.polyfill.resourceKey="src/MicroJson.SourceGenerator/Polyfills.cs"
 
       - name: Build
         if: github.event_name != 'pull_request' && github.actor != 'dependabot[bot]'
