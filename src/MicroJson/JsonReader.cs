@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.IO;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -42,6 +43,8 @@ public enum JsonTokenType
 /// Arrays are read with <see cref="ReadStartArray"/> followed by calls to <see cref="TryReadNextItem"/>
 /// until it returns <c>false</c>, reading exactly one value after each call that returns <c>true</c>.
 /// All errors are reported as <see cref="ParserException"/>.
+/// The input is either a string or a <see cref="TextReader"/>, which is read in chunks so that the whole input does not have to be
+/// in memory.
 /// </remarks>
 public sealed class JsonReader
 {
@@ -61,7 +64,24 @@ public sealed class JsonReader
     [FeatureSwitchDefinition(UseDecimalSwitch)]
     internal static bool UseDecimal => !AppContext.TryGetSwitch(UseDecimalSwitch, out var enabled) || enabled;
 
-    readonly string input;
+    const int DefaultBufferSize = 4096;
+
+    // The input is read into a fixed-size buffer in chunks, from a TextReader or (by copying) from a string, so that there is only
+    // one code path to access it. buffer[0..end) holds the available characters, pos is the position of the next one. Characters
+    // are consumed as they are read and the buffer is only refilled when all of them have been consumed. Strings that continue past
+    // the end of the buffer are collected in a StringBuilder, numbers (which need their complete text) in numberBuffer.
+    readonly string? text;
+    int textPosition;
+    readonly TextReader? source;
+    readonly char[] buffer;
+    int end;
+    bool sourceEnded;
+
+    // Numbers are scanned from pos to scanIndex without being consumed, so that errors refer to their start. If a number continues
+    // past the end of the buffer, the part in the buffer is moved to numberBuffer before refilling.
+    char[]? numberBuffer;
+    int numberLength;
+    int scanIndex;
     readonly int maxDepth = 64;
     int pos;
     int line = 1;
@@ -77,7 +97,29 @@ public sealed class JsonReader
     public JsonReader(string json)
     {
         ArgumentNullException.ThrowIfNull(json);
-        input = json;
+        text = json;
+        buffer = new char[Math.Clamp(json.Length, 1, DefaultBufferSize)];
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="JsonReader"/> class that reads from a <see cref="TextReader"/>.
+    /// </summary>
+    /// <param name="reader">The reader to read the JSON text from. It is not disposed.</param>
+    public JsonReader(TextReader reader) : this(reader, DefaultBufferSize)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="JsonReader"/> class that reads from a <see cref="TextReader"/>.
+    /// </summary>
+    /// <param name="reader">The reader to read the JSON text from. It is not disposed.</param>
+    /// <param name="bufferSize">The number of characters to read at a time. Values (e.g. long strings) may be longer than the buffer.</param>
+    public JsonReader(TextReader reader, int bufferSize)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        ArgumentOutOfRangeException.ThrowIfLessThan(bufferSize, 1);
+        source = reader;
+        buffer = new char[bufferSize];
     }
 
     /// <summary>
@@ -119,10 +161,10 @@ public sealed class JsonReader
     {
         SkipWhitespace();
 
-        if (pos >= input.Length)
+        if (!HasChar())
             throw CreateException("unexpected end of input");
 
-        var c = input[pos];
+        var c = buffer[pos];
 
         return c switch
         {
@@ -204,14 +246,16 @@ public sealed class JsonReader
     {
         SkipWhitespace();
 
-        if (Accept("true"))
+        if (IsNext('t'))
         {
+            ExpectLiteral("true", "expected boolean");
             Log("bool: true");
             return true;
         }
 
-        if (Accept("false"))
+        if (IsNext('f'))
         {
+            ExpectLiteral("false", "expected boolean");
             Log("bool: false");
             return false;
         }
@@ -227,13 +271,14 @@ public sealed class JsonReader
     {
         SkipWhitespace();
 
-        if (Accept("null"))
-        {
-            Log("null");
-            return true;
-        }
+        if (!IsNext('n'))
+            return false;
 
-        return false;
+        // only null starts with n
+        ExpectLiteral("null", "unknown token");
+        Log("null");
+
+        return true;
     }
 
     /// <summary>
@@ -248,7 +293,7 @@ public sealed class JsonReader
         if (!T.TryParse(num, FloatStyles, CultureInfo.InvariantCulture, out var value) || !T.IsFinite(value))
             throw CreateException(IsIntegerType<T>() && !IsIntegral(num) ? "expected an integer" : "number out of range");
 
-        Advance(num.Length);
+        ConsumeNumber(num.Length);
 
         return value;
     }
@@ -429,8 +474,9 @@ public sealed class JsonReader
             case JsonTokenType.False:
                 return ReadBoolean();
             case JsonTokenType.Null:
-                if (TryReadNull()) return null;
-                throw CreateException("unknown token");
+                // reads null or throws
+                TryReadNull();
+                return null;
             case JsonTokenType.StartArray:
                 return ReadDomList();
             case JsonTokenType.StartObject:
@@ -451,14 +497,14 @@ public sealed class JsonReader
                 ReadString();
                 break;
             case JsonTokenType.Number:
-                Advance(ScanNumber(out _).Length);
+                ConsumeNumber(ScanNumber(out _).Length);
                 break;
             case JsonTokenType.True:
             case JsonTokenType.False:
                 ReadBoolean();
                 break;
             case JsonTokenType.Null:
-                if (!TryReadNull()) throw CreateException("unknown token");
+                TryReadNull();
                 break;
             case JsonTokenType.StartArray:
                 ReadStartArray();
@@ -480,7 +526,7 @@ public sealed class JsonReader
     {
         SkipWhitespace();
 
-        if (pos != input.Length)
+        if (HasChar())
             throw CreateException("extra characters at end");
     }
 
@@ -606,162 +652,300 @@ public sealed class JsonReader
             throw CreateException("number out of range");
         }
 
-        Advance(num.Length);
+        ConsumeNumber(num.Length);
 
         return result;
     }
 
     /// <summary>
-    /// Validates the number at the current position (after whitespace) without consuming it.
+    /// Validates the number at the current position (after whitespace) without consuming it; call <see cref="ConsumeNumber"/> afterwards.
+    /// The returned span is valid until the reader is used again.
     /// </summary>
     private ReadOnlySpan<char> ScanNumber(out bool isInteger)
     {
         SkipWhitespace();
 
-        int currentPos = pos;
+        // fast path: the number ends within the buffer (if it reaches the end of the buffer, it may continue in the next chunk)
+        var available = new ReadOnlySpan<char>(buffer, 0, end);
+        int k = pos;
         isInteger = true;
 
-        if (IsAt(currentPos, '-')) currentPos++;
+        if (k < available.Length && available[k] == '-') k++;
 
         // RFC 8259: int = zero / ( digit1-9 *DIGIT )
-        if (IsAt(currentPos, '0'))
+        if (k < available.Length && available[k] == '0')
         {
-            currentPos++;
-            if (currentPos < input.Length && char.IsAsciiDigit(input[currentPos]))
+            k++;
+            if (k < available.Length && char.IsAsciiDigit(available[k]))
+                throw CreateException("leading zero in number");
+        }
+        else if (!ScanDigits(available, ref k))
+        {
+            goto Slow;
+        }
+
+        if (k < available.Length && available[k] == '.')
+        {
+            k++;
+            isInteger = false;
+            if (!ScanDigits(available, ref k)) goto Slow;
+        }
+
+        if (k < available.Length && available[k] is 'e' or 'E')
+        {
+            k++;
+            if (k < available.Length && available[k] is '+' or '-') k++;
+            if (!ScanDigits(available, ref k)) goto Slow;
+        }
+
+        if (k < available.Length)
+        {
+            numberLength = 0;
+            scanIndex = k;
+            return available[pos..k];
+        }
+
+    Slow:
+        return ScanNumberAcrossChunks(out isInteger);
+    }
+
+    /// <summary>
+    /// Scans digits for the fast path of <see cref="ScanNumber"/>.
+    /// </summary>
+    /// <returns><c>false</c> if the end of the buffer was reached, i.e. the slow path is needed.</returns>
+    private bool ScanDigits(ReadOnlySpan<char> available, ref int k)
+    {
+        int start = k;
+        while (k < available.Length && char.IsAsciiDigit(available[k])) k++;
+
+        if (k == available.Length)
+            return false;
+
+        if (k == start)
+            throw CreateException("not a number");
+
+        return true;
+    }
+
+    /// <summary>
+    /// Scans a number that may continue past the end of the buffer.
+    /// </summary>
+    private ReadOnlySpan<char> ScanNumberAcrossChunks(out bool isInteger)
+    {
+        numberLength = 0;
+        scanIndex = pos;
+        isInteger = true;
+
+        if (PeekNumberChar() == '-') scanIndex++;
+
+        // RFC 8259: int = zero / ( digit1-9 *DIGIT )
+        if (PeekNumberChar() == '0')
+        {
+            scanIndex++;
+            if (IsAsciiDigit(PeekNumberChar()))
                 throw CreateException("leading zero in number");
         }
         else
         {
-            ExpectDigits(ref currentPos);
+            TakeDigits();
         }
 
-        if (IsAt(currentPos, '.'))
+        if (PeekNumberChar() == '.')
         {
-            currentPos++;
+            scanIndex++;
             isInteger = false;
-            ExpectDigits(ref currentPos);
+            TakeDigits();
         }
 
-        if (IsAt(currentPos, 'e') || IsAt(currentPos, 'E'))
+        if (PeekNumberChar() is 'e' or 'E')
         {
-            currentPos++;
-            if (IsAt(currentPos, '+') || IsAt(currentPos, '-')) currentPos++;
-            ExpectDigits(ref currentPos);
+            scanIndex++;
+            if (PeekNumberChar() is '+' or '-') scanIndex++;
+            TakeDigits();
         }
 
-        return input.AsSpan(pos, currentPos - pos);
+        // anything after the number (e.g. the second dot in 1.2.3) is left for the caller to reject
+
+        // this path is only taken for numbers that reached the end of the buffer, so part of the number is in numberBuffer
+        AppendNumberChars();
+        return new ReadOnlySpan<char>(numberBuffer, 0, numberLength);
     }
 
-    private void ExpectDigits(ref int p)
+    /// <summary>
+    /// Returns the character at <see cref="scanIndex"/>, or -1 at the end of the input.
+    /// </summary>
+    private int PeekNumberChar()
     {
-        int start = p;
-        while (p < input.Length && char.IsAsciiDigit(input[p])) p++;
-        if (start == p) throw CreateException("not a number");
+        if (scanIndex < end)
+            return buffer[scanIndex];
+
+        // the number continues past the end of the buffer (or the input ends): move the part in the buffer out, then refill
+        AppendNumberChars();
+        pos = end; // consumed without updating the line info, which ConsumeNumber does
+
+        if (!Refill())
+        {
+            scanIndex = pos;
+            return -1;
+        }
+
+        scanIndex = 0;
+        return buffer[0];
     }
+
+    private void TakeDigits()
+    {
+        if (!IsAsciiDigit(PeekNumberChar()))
+            throw CreateException("not a number");
+
+        do
+        {
+            var available = new ReadOnlySpan<char>(buffer, 0, end);
+            int i = scanIndex + 1;
+            while ((uint)i < (uint)available.Length && char.IsAsciiDigit(available[i])) i++;
+            scanIndex = i;
+        }
+        while (IsAsciiDigit(PeekNumberChar()));
+    }
+
+    private void AppendNumberChars()
+    {
+        int count = scanIndex - pos;
+
+        if (count == 0)
+            return;
+
+        if (numberBuffer == null || numberLength + count > numberBuffer.Length)
+        {
+            var larger = new char[Math.Max(Math.Max(64, numberLength + count), (numberBuffer?.Length ?? 0) * 2)];
+            numberBuffer?.AsSpan(0, numberLength).CopyTo(larger);
+            numberBuffer = larger;
+        }
+
+        Array.Copy(buffer, pos, numberBuffer, numberLength, count);
+        numberLength += count;
+    }
+
+    private void ConsumeNumber(int length)
+    {
+        pos = scanIndex;
+
+        // numbers contain no line breaks
+        if (CollectLineInfo)
+            col += length;
+    }
+
+    private static bool IsAsciiDigit(int c) => (uint)(c - '0') <= 9;
 
     /// <summary>
     /// Reads the rest of a string after the opening quote.
     /// </summary>
     private string ReadStringContent()
     {
-        int currentPos = pos;
-
-        // fast path: no escape sequences
-        while (currentPos < input.Length)
-        {
-            var c = input[currentPos];
-
-            if (c == '"')
-            {
-                var s = input.Substring(pos, currentPos - pos);
-                Advance(currentPos - pos + 1);
-                Log("string: {0}", s);
-                return s;
-            }
-
-            if (c == '\\') break;
-
-            if (c < 0x20)
-                throw CreateException("control character in string");
-
-            currentPos++;
-        }
-
-        var sb = new StringBuilder();
-        sb.Append(input, pos, currentPos - pos);
+        StringBuilder? sb = null;
 
         while (true)
         {
-            if (currentPos >= input.Length)
-                throw CreateException("unterminated string");
+            // scan the characters in the buffer up to a quote, backslash, or control character
+            // (looping over a span of the available characters lets the compiler drop the bounds checks)
+            var chars = buffer;
+            var available = new ReadOnlySpan<char>(chars, 0, end);
+            int i = pos;
 
-            var c = input[currentPos];
-
-            if (c == '"')
+            while ((uint)i < (uint)available.Length)
             {
-                Advance(currentPos - pos + 1);
-                var s = sb.ToString();
+                var ch = available[i];
+                if (ch == '"' || ch == '\\' || ch < 0x20) break;
+                i++;
+            }
+
+            if (i < end && chars[i] == '"')
+            {
+                string s;
+
+                if (sb == null)
+                {
+                    // fast path: the whole string is in the buffer and has no escape sequences
+                    s = new string(chars, pos, i - pos);
+                }
+                else
+                {
+                    sb.Append(chars, pos, i - pos);
+                    s = sb.ToString();
+                }
+
+                Advance(i - pos + 1);
                 Log("string: {0}", s);
                 return s;
             }
-            else if (c == '\\')
+
+            // the string continues in the next chunk or has an escape sequence: collect it in a StringBuilder
+            sb ??= new StringBuilder();
+            sb.Append(chars, pos, i - pos);
+            Advance(i - pos);
+
+            if (i == end)
             {
-                currentPos++;
-
-                if (currentPos >= input.Length)
-                    throw CreateException("unterminated escape sequence string");
-
-                c = input[currentPos];
-
-                switch (c)
-                {
-                    case '"':
-                    case '/':
-                    case '\\':
-                        sb.Append(c);
-                        break;
-                    case 'b':
-                        sb.Append('\b');
-                        break;
-                    case 'f':
-                        sb.Append('\f');
-                        break;
-                    case 'n':
-                        sb.Append('\n');
-                        break;
-                    case 'r':
-                        sb.Append('\r');
-                        break;
-                    case 't':
-                        sb.Append('\t');
-                        break;
-                    case 'u':
-                        currentPos += 4;
-                        if (currentPos >= input.Length)
-                            throw CreateException("unterminated unicode escape in string");
-                        var h1 = HexValue(input[currentPos - 3]);
-                        var h2 = HexValue(input[currentPos - 2]);
-                        var h3 = HexValue(input[currentPos - 1]);
-                        var h4 = HexValue(input[currentPos]);
-                        if ((h1 | h2 | h3 | h4) < 0)
-                            throw CreateException("not a well-formed unicode escape sequence in string");
-                        sb.Append((char)((h1 << 12) | (h2 << 8) | (h3 << 4) | h4));
-                        break;
-                    default:
-                        throw CreateException("unknown escape sequence in string");
-                }
+                if (!Refill())
+                    throw CreateException("unterminated string");
+                continue;
             }
-            else if (c < 0x20)
-            {
+
+            if (chars[i] < 0x20)
                 throw CreateException("control character in string");
-            }
-            else
-            {
-                sb.Append(c);
-            }
 
-            currentPos++;
+            // escape sequence
+            Advance(1);
+            var c = ReadEscapeChar("unterminated escape sequence string");
+
+            switch (c)
+            {
+                case '"':
+                case '/':
+                case '\\':
+                    sb.Append(c);
+                    break;
+                case 'b':
+                    sb.Append('\b');
+                    break;
+                case 'f':
+                    sb.Append('\f');
+                    break;
+                case 'n':
+                    sb.Append('\n');
+                    break;
+                case 'r':
+                    sb.Append('\r');
+                    break;
+                case 't':
+                    sb.Append('\t');
+                    break;
+                case 'u':
+                    int u = 0;
+                    for (int k = 0; k < 4; k++)
+                    {
+                        var h = HexValue(ReadEscapeChar("unterminated unicode escape in string"));
+                        if (h < 0)
+                            throw CreateException("not a well-formed unicode escape sequence in string");
+                        u = (u << 4) | h;
+                    }
+                    sb.Append((char)u);
+                    break;
+                default:
+                    throw CreateException("unknown escape sequence in string");
+            }
         }
+    }
+
+    private char ReadEscapeChar(string error)
+    {
+        if (!HasChar())
+            throw CreateException(error);
+
+        var c = buffer[pos];
+        Advance(1);
+
+        return c;
     }
 
     /// <summary>
@@ -775,64 +959,149 @@ public sealed class JsonReader
         _ => -1,
     };
 
-    private bool Accept(string s)
+    private void ExpectLiteral(string literal, string error)
     {
-        if (input.AsSpan(pos).StartsWith(s, StringComparison.Ordinal))
+        if (end - pos >= literal.Length && new ReadOnlySpan<char>(buffer, pos, literal.Length).SequenceEqual(literal))
         {
-            Advance(s.Length);
-            return true;
+            Advance(literal.Length);
+            return;
         }
 
-        return false;
+        for (int i = 0; i < literal.Length; i++)
+        {
+            if (!HasChar() || buffer[pos] != literal[i])
+                throw CreateException(error);
+
+            Advance(1);
+        }
     }
 
+    // The per-token checks below (Expect, IsNext, SkipWhitespace, Advance) run several times per token. Each has a tiny fast path
+    // that is inlined into its callers, and a separate slow path (refilling, line info, errors) that is not, so that the callers
+    // don't pay for the slow path's code (e.g. saving registers for the refill call) when it isn't needed.
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void Expect(char c)
     {
-        if (pos >= input.Length || input[pos] != c)
+        if (pos < end && buffer[pos] == c && !CollectLineInfo)
+        {
+            pos++;
+            return;
+        }
+
+        ExpectSlow(c);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void ExpectSlow(char c)
+    {
+        if (!HasChar() || buffer[pos] != c)
             throw CreateException("expected '" + c + "'");
 
         Advance(1);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void Advance(int n)
     {
         if (CollectLineInfo)
-        {
-            for (int i = pos; i < pos + n; i++)
-            {
-                if (input[i] == '\n')
-                {
-                    line++;
-                    col = 1;
-                }
-                else
-                {
-                    col++;
-                }
-            }
-        }
+            CountLines(n);
 
         pos += n;
     }
 
-    private void SkipWhitespace()
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void CountLines(int n)
     {
-        int n = pos;
-
-        while (n < input.Length)
+        foreach (var c in new ReadOnlySpan<char>(buffer, pos, n))
         {
-            var c = input[n];
-            if (c != ' ' && c != '\t' && c != '\r' && c != '\n') break;
-            n++;
+            if (c == '\n')
+            {
+                line++;
+                col = 1;
+            }
+            else
+            {
+                col++;
+            }
         }
-
-        if (n != pos)
-            Advance(n - pos);
     }
 
-    private bool IsNext(char c) => pos < input.Length && input[pos] == c;
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void SkipWhitespace()
+    {
+        // all JSON whitespace is <= ' ', so most tokens in compact JSON need no further work
+        if (pos < end && buffer[pos] > ' ')
+            return;
 
-    private bool IsAt(int p, char c) => p < input.Length && input[p] == c;
+        SkipWhitespaceSlow();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void SkipWhitespaceSlow()
+    {
+        while (true)
+        {
+            var available = new ReadOnlySpan<char>(buffer, 0, end);
+            int i = pos;
+
+            while ((uint)i < (uint)available.Length)
+            {
+                var c = available[i];
+                if (c != ' ' && c != '\t' && c != '\r' && c != '\n') break;
+                i++;
+            }
+
+            if (i != pos)
+                Advance(i - pos);
+
+            // stop at a non-whitespace character or at the end of the input
+            if (i < end || !Refill())
+                return;
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool IsNext(char c) => pos < end ? buffer[pos] == c : Refill() && buffer[pos] == c;
+
+    /// <summary>
+    /// Returns <c>true</c> if there is a character at <see cref="pos"/>, refilling the buffer if necessary.
+    /// </summary>
+    private bool HasChar() => pos < end || Refill();
+
+    /// <summary>
+    /// Reads the next chunk into the buffer. Only called when all characters in the buffer have been consumed.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private bool Refill()
+    {
+        if (sourceEnded)
+            return false;
+
+        int n;
+
+        if (text != null)
+        {
+            n = Math.Min(buffer.Length, text.Length - textPosition);
+            text.CopyTo(textPosition, buffer, 0, n);
+            textPosition += n;
+        }
+        else
+        {
+            n = source!.Read(buffer, 0, buffer.Length);
+        }
+
+        pos = 0;
+        end = Math.Max(n, 0);
+
+        if (end == 0)
+        {
+            sourceEnded = true;
+            return false;
+        }
+
+        return true;
+    }
 
     private void Log(string message)
     {

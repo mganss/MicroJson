@@ -53,7 +53,9 @@ namespace MicroJson.Tests
             Assert.That(new JsonReader("1").MaxDepth, Is.EqualTo(64));
             Assert.That(new JsonReader("1") { MaxDepth = 2 }.MaxDepth, Is.EqualTo(2));
             Assert.Throws<ArgumentOutOfRangeException>(() => _ = new JsonReader("1") { MaxDepth = 0 });
-            Assert.Throws<ArgumentNullException>(() => _ = new JsonReader(null!));
+            Assert.Throws<ArgumentNullException>(() => _ = new JsonReader((string)null!));
+            Assert.Throws<ArgumentNullException>(() => _ = new JsonReader((System.IO.TextReader)null!));
+            Assert.Throws<ArgumentOutOfRangeException>(() => _ = new JsonReader(new System.IO.StringReader("1"), 0));
 
             var r = new JsonReader("[\n  1,\n  x]") { CollectLineInfo = true };
             r.ReadStartArray();
@@ -304,8 +306,9 @@ namespace MicroJson.Tests
             Assert.That(n, Is.EqualTo(new JsonNumber("1e400")));
             Assert.That(n, Is.Not.EqualTo(new JsonNumber("1E400")));
             Assert.That(n.GetHashCode(), Is.EqualTo(new JsonNumber("1e400").GetHashCode()));
-            Assert.That(n.Equals((object?)null), Is.False);
             Assert.That(n.Equals("1e400"), Is.False);
+            // last: the compiler treats Equals(null) as a null check on n
+            Assert.That(n.Equals((object?)null), Is.False);
 
             foreach (var invalid in new[] { "", " 1", "1 ", "01", "1.", ".5", "-", "1e", "+1", "abc", "[1]", "1,2", "NaN" })
                 Assert.Throws<ArgumentException>(() => _ = new JsonNumber(invalid), invalid);

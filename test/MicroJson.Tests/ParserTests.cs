@@ -30,7 +30,7 @@ namespace MicroJson
         [Test]
         public void TestInvalidInput()
         {
-            Assert.Throws<ParserException>(() => Parser.Parse(null));
+            Assert.Throws<ParserException>(() => Parser.Parse((string)null));
             Assert.Throws<ParserException>(() => Parser.Parse(""));
             Assert.Throws<ParserException>(() => Parser.Parse("  \t   \n   "));
         }

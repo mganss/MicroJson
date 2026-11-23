@@ -22,9 +22,9 @@ and serialize it back) to a Native AOT hello world, measured on win-x64 with .NE
 
 | | Added to baseline |
 |---|---:|
-| MicroJson (source-generated serialization) | 22 KB |
-| MicroJson (`JsonParser` and `JsonWriter.WriteValue`) | 150 KB |
-| MicroJson (`JsonParser` and `JsonWriter.WriteValue`, `MicroJson.UseDecimal` off) | 71.5 KB |
+| MicroJson (source-generated serialization) | 26 KB |
+| MicroJson (`JsonParser` and `JsonWriter.WriteValue`) | 153 KB |
+| MicroJson (`JsonParser` and `JsonWriter.WriteValue`, `MicroJson.UseDecimal` off) | 75.5 KB |
 | System.Text.Json (source-generated serialization) | 1237 KB |
 
 The sample apps are in [samples/AotSize](samples/AotSize).
@@ -199,6 +199,27 @@ Reading and writing
 
 `JsonReader` and `JsonWriter` are the low-level forward-only reader and writer that the generated code and `JsonParser` are built on.
 You can also use them directly.
+
+### Streaming input
+
+Besides strings, JSON can be read from a `TextReader`, e.g. a `StreamReader` over a file or network stream. The input is read in
+chunks into a fixed-size buffer (4096 characters by default), so the whole document does not have to be in memory: besides the buffer,
+only the value currently being built (e.g. a long string) is held:
+
+```csharp
+using var reader = new StreamReader(stream);
+
+var order = AppJson.Deserialize<Order>(reader);              // generated serializer, or
+var value = new JsonParser().Parse(reader);                  // generic objects, or
+var jsonReader = new JsonReader(reader, bufferSize: 16384);  // the low-level reader
+```
+
+Reading from a `TextReader` adds nothing to the binary size beyond the numbers above, but a `StreamReader` brings in .NET's stream and
+UTF-8 decoding code (about 26 KB with Native AOT, if the app doesn't use it already).
+
+Reading is synchronous: the reader blocks while waiting for more input. For asynchronous I/O, read the input asynchronously
+first (e.g. `await reader.ReadToEndAsync()`) and parse the result; asynchronous parsing is not supported because it would add
+a lot of code (with Native AOT, async I/O alone adds about 330 KB to a binary that doesn't use it yet).
 
 Nesting of arrays and objects is limited to `MaxDepth` levels (default 64) to protect against stack exhaustion
 from malicious input.

@@ -126,7 +126,19 @@ namespace MicroJson
             if (text == null)
                 throw new ParserException("Parse error: input is null.", 0, 0);
 
-            var reader = new JsonReader(text) { MaxDepth = MaxDepth, CollectLineInfo = CollectLineInfo, Logger = Logger, PreserveInexactNumbers = PreserveInexactNumbers };
+            return Parse(new JsonReader(text) { MaxDepth = MaxDepth, CollectLineInfo = CollectLineInfo, Logger = Logger, PreserveInexactNumbers = PreserveInexactNumbers });
+        }
+
+        /// <summary>
+        /// Parses JSON text read from a <see cref="System.IO.TextReader"/>, e.g. a <see cref="System.IO.StreamReader"/>.
+        /// The text is read in chunks, so the whole input does not have to be in memory.
+        /// </summary>
+        /// <param name="reader">The reader to read the JSON text from. It is not disposed.</param>
+        public object? Parse(System.IO.TextReader reader) =>
+            Parse(new JsonReader(reader) { MaxDepth = MaxDepth, CollectLineInfo = CollectLineInfo, Logger = Logger, PreserveInexactNumbers = PreserveInexactNumbers });
+
+        private static object? Parse(JsonReader reader)
+        {
             var value = reader.ReadValue();
             reader.ReadEndOfInput();
 

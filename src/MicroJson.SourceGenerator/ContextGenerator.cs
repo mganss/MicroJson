@@ -1173,6 +1173,15 @@ sealed class ContextGenerator
         sb.AppendLine("            return value;");
         sb.AppendLine("        }");
         sb.AppendLine();
+        sb.AppendLine("        /// <summary>Deserializes JSON text read from a TextReader (e.g. a StreamReader) into a value of a type that is registered through [MicroJsonSerializable] on this class.</summary>");
+        sb.AppendLine("        public static T Deserialize<T>(global::System.IO.TextReader reader)");
+        sb.AppendLine("        {");
+        sb.AppendLine($"            var r = new {Reader}(reader);");
+        sb.AppendLine("            var value = Deserialize<T>(r);");
+        sb.AppendLine("            r.ReadEndOfInput();");
+        sb.AppendLine("            return value;");
+        sb.AppendLine("        }");
+        sb.AppendLine();
         sb.AppendLine("        /// <summary>Reads a value of a type that is registered through [MicroJsonSerializable] on this class.</summary>");
         sb.AppendLine($"        public static T Deserialize<T>({Reader} reader)");
         sb.AppendLine("        {");

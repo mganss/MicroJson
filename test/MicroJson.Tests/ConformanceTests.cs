@@ -14,7 +14,7 @@ namespace MicroJson
     [TestFixture]
     public class ConformanceTests
     {
-        static readonly string TestDirectory = Path.Combine(AppContext.BaseDirectory, "JSONTestSuite", "test_parsing");
+        internal static readonly string TestDirectory = Path.Combine(AppContext.BaseDirectory, "JSONTestSuite", "test_parsing");
 
         static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
@@ -32,7 +32,7 @@ namespace MicroJson
         /// Decodes a test file. Returns null if the file is not valid UTF-8, which means the input is rejected
         /// before it reaches the parser (the parser operates on strings).
         /// </summary>
-        static string? Decode(string file)
+        internal static string? Decode(string file)
         {
             var bytes = File.ReadAllBytes(Path.Combine(TestDirectory, file));
 

@@ -12,7 +12,7 @@ set -euo pipefail
 rid="${1:-linux-x64}"
 
 # maximum size in KB that each MicroJson app may add to the baseline app (measured on win-x64 with .NET 10:
-# MicroJsonTyped 22 KB, MicroJsonDom 150 KB, MicroJsonDomDouble 71.5 KB; the difference between the two DOM apps
+# MicroJsonTyped 26 KB, MicroJsonDom 153 KB, MicroJsonDomDouble 75.5 KB; the difference between the two DOM apps
 # is the cost of boxing decimal numbers)
 declare -A limits=([MicroJsonTyped]=40 [MicroJsonDom]=192 [MicroJsonDomDouble]=96)
 
