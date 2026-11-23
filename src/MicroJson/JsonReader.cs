@@ -653,9 +653,9 @@ public sealed class JsonReader
         }
         else if (PreserveInexactNumbers)
         {
-            var text = num.ToString();
-            Log("number: {0}", text);
-            result = new JsonNumber(text, validated: true);
+            var numberText = num.ToString();
+            Log("number: {0}", numberText);
+            result = new JsonNumber(numberText, validated: true);
         }
         else
         {
@@ -1098,7 +1098,7 @@ public sealed class JsonReader
         }
         else
         {
-            n = source!.Read(buffer, 0, buffer.Length);
+            n = source.Read(buffer, 0, buffer.Length);
         }
 
         pos = 0;

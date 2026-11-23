@@ -378,9 +378,10 @@ sealed class ContextGenerator
             ? "Nullable_" + Sanitize(nullable.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat))
             : Sanitize(type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
         var unique = id;
+        int suffix = 2;
 
-        for (int i = 2; !ids.Add(unique); i++)
-            unique = id + i;
+        while (!ids.Add(unique))
+            unique = id + suffix++;
 
         return unique;
     }
@@ -427,7 +428,7 @@ sealed class ContextGenerator
         Line();
     }
 
-    sealed record DerivedType(string Discriminator, TypeModel Type, int Depth);
+    sealed record DerivedType(string Discriminator, TypeModel Type, int InheritanceDepth);
 
     /// <summary>
     /// Emits the methods for a class, struct, or interface: <c>WriteMembers_X</c> and <c>ReadBody_X</c> handle the properties,
@@ -592,7 +593,7 @@ sealed class ContextGenerator
         }
 
         // stable sort: most derived first
-        return result.Select((d, i) => (d, i)).OrderByDescending(x => x.d.Depth).ThenBy(x => x.i).Select(x => x.d).ToList();
+        return result.Select((d, i) => (d, i)).OrderByDescending(x => x.d.InheritanceDepth).ThenBy(x => x.i).Select(x => x.d).ToList();
     }
 
     static bool DerivesFrom(ITypeSymbol type, INamedTypeSymbol baseType)
@@ -827,11 +828,11 @@ sealed class ContextGenerator
                 if (member.IsStatic || member.DeclaredAccessibility != Accessibility.Public)
                     continue;
 
-                if (member is IPropertySymbol { IsIndexer: false } or IFieldSymbol { IsConst: false, IsImplicitlyDeclared: false })
+                // members hidden or overridden in derived types are skipped
+                if (member is IPropertySymbol { IsIndexer: false } or IFieldSymbol { IsConst: false, IsImplicitlyDeclared: false }
+                    && seenNames.Add(member.Name) && !HasAttribute(member, IgnoreAttributeName))
                 {
-                    // members hidden or overridden in derived types are skipped
-                    if (seenNames.Add(member.Name) && !HasAttribute(member, IgnoreAttributeName))
-                        level.Add(member);
+                    level.Add(member);
                 }
             }
 
@@ -847,12 +848,8 @@ sealed class ContextGenerator
         {
             var (memberType, canRead, write) = member switch
             {
-                IPropertySymbol p => (p.Type,
-                    p.GetMethod?.DeclaredAccessibility == Accessibility.Public,
-                    p.SetMethod is { DeclaredAccessibility: Accessibility.Public } setter
-                        ? (setter.IsInitOnly || p.IsRequired ? WriteKind.Init : WriteKind.Set)
-                        : WriteKind.None),
-                IFieldSymbol f => (f.Type, true, f.IsReadOnly ? WriteKind.None : f.IsRequired ? WriteKind.Init : WriteKind.Set),
+                IPropertySymbol p => (p.Type, p.GetMethod?.DeclaredAccessibility == Accessibility.Public, GetWriteKind(p)),
+                IFieldSymbol f => (f.Type, true, GetWriteKind(f)),
                 _ => throw new InvalidOperationException(),
             };
 
@@ -878,6 +875,36 @@ sealed class ContextGenerator
         }
 
         return members;
+    }
+
+    static WriteKind GetWriteKind(IPropertySymbol property)
+    {
+        if (property.SetMethod is not { DeclaredAccessibility: Accessibility.Public } setter)
+            return WriteKind.None;
+
+        // required members must be set in an object initializer
+        return setter.IsInitOnly || property.IsRequired ? WriteKind.Init : WriteKind.Set;
+    }
+
+    static WriteKind GetWriteKind(IFieldSymbol field)
+    {
+        if (field.IsReadOnly)
+            return WriteKind.None;
+
+        return field.IsRequired ? WriteKind.Init : WriteKind.Set;
+    }
+
+    static string TypeKeyword(INamedTypeSymbol type)
+    {
+        if (type.IsRecord)
+            return type.TypeKind == TypeKind.Struct ? "record struct" : "record";
+
+        return type.TypeKind switch
+        {
+            TypeKind.Struct => "struct",
+            TypeKind.Interface => "interface",
+            _ => "class",
+        };
     }
 
     static bool HasAttribute(ISymbol symbol, string name) =>
@@ -1064,7 +1091,7 @@ sealed class ContextGenerator
     /// <summary>
     /// Finds the constructor to use for deserialization. Returns <c>null</c> (and no error) if the parameterless constructor should be used.
     /// </summary>
-    IMethodSymbol? FindConstructor(INamedTypeSymbol type, List<MemberModel> members, out string? error)
+    static IMethodSymbol? FindConstructor(INamedTypeSymbol type, List<MemberModel> members, out string? error)
     {
         error = null;
 
@@ -1141,10 +1168,7 @@ sealed class ContextGenerator
 
         foreach (var t in containers)
         {
-            var keyword = t.IsRecord
-                ? (t.TypeKind == TypeKind.Struct ? "record struct" : "record")
-                : t.TypeKind switch { TypeKind.Struct => "struct", TypeKind.Interface => "interface", _ => "class" };
-            sb.AppendLine((t.IsStatic ? "static " : "") + "partial " + keyword + " " + Identifier(t.Name));
+            sb.AppendLine((t.IsStatic ? "static " : "") + "partial " + TypeKeyword(t) + " " + Identifier(t.Name));
             sb.AppendLine("{");
         }
 
