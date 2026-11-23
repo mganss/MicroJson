@@ -6,6 +6,10 @@ updates:
     interval: daily
     time: "04:00"
   open-pull-requests-limit: 10
+  ignore:
+  # The source generator runs inside the consumer's compiler and must reference the oldest Roslyn version it supports
+  # (a newer one fails to load with older SDKs, CS9057). The tests use the same version to test against the same Roslyn.
+  - dependency-name: Microsoft.CodeAnalysis.CSharp
 - package-ecosystem: github-actions
   directory: "/"
   schedule:
