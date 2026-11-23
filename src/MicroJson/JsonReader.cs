@@ -70,7 +70,8 @@ public sealed class JsonReader
     // one code path to access it. buffer[0..end) holds the available characters, pos is the position of the next one. Characters
     // are consumed as they are read and the buffer is only refilled when all of them have been consumed. Strings that continue past
     // the end of the buffer are collected in a StringBuilder, numbers (which need their complete text) in numberBuffer.
-    readonly string? text;
+    // string (or character segment) input; only used when source is null
+    readonly ReadOnlyMemory<char> text;
     int textPosition;
     readonly TextReader? source;
     readonly char[] buffer;
@@ -97,6 +98,15 @@ public sealed class JsonReader
     public JsonReader(string json)
     {
         ArgumentNullException.ThrowIfNull(json);
+        text = json.AsMemory();
+        buffer = new char[Math.Clamp(json.Length, 1, DefaultBufferSize)];
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="JsonReader"/> class that reads a segment of characters (used by <see cref="JsonFeed"/>).
+    /// </summary>
+    internal JsonReader(ReadOnlyMemory<char> json)
+    {
         text = json;
         buffer = new char[Math.Clamp(json.Length, 1, DefaultBufferSize)];
     }
@@ -1080,10 +1090,10 @@ public sealed class JsonReader
 
         int n;
 
-        if (text != null)
+        if (source == null)
         {
             n = Math.Min(buffer.Length, text.Length - textPosition);
-            text.CopyTo(textPosition, buffer, 0, n);
+            text.Span.Slice(textPosition, n).CopyTo(buffer);
             textPosition += n;
         }
         else

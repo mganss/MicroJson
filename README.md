@@ -217,9 +217,38 @@ var jsonReader = new JsonReader(reader, bufferSize: 16384);  // the low-level re
 Reading from a `TextReader` adds nothing to the binary size beyond the numbers above, but a `StreamReader` brings in .NET's stream and
 UTF-8 decoding code (about 26 KB with Native AOT, if the app doesn't use it already).
 
-Reading is synchronous: the reader blocks while waiting for more input. For asynchronous I/O, read the input asynchronously
-first (e.g. `await reader.ReadToEndAsync()`) and parse the result; asynchronous parsing is not supported because it would add
-a lot of code (with Native AOT, async I/O alone adds about 330 KB to a binary that doesn't use it yet).
+Reading from a `TextReader` is synchronous: the reader blocks while waiting for more input. For asynchronous I/O, use `JsonFeed`.
+
+### Incremental input (non-blocking)
+
+`JsonFeed` splits input that arrives in chunks into complete values, so that each value can be read as soon as it is complete.
+It contains no asynchronous code itself: you read the input however you like (e.g. with `await ReadAsync`) and append it.
+In `ArrayElements` mode, the elements of a top-level array are returned one at a time, so only one element has to be in memory,
+however large the array is:
+
+```csharp
+var feed = new JsonFeed(JsonFeedMode.ArrayElements);
+var buffer = new char[4096];
+int n;
+
+while ((n = await reader.ReadAsync(buffer)) > 0)
+{
+    feed.Append(buffer.AsSpan(0, n));
+    while (feed.TryGetValue(out var json))
+        Process(AppJson.Deserialize<Order>(json));
+}
+
+feed.Complete();
+while (feed.TryGetValue(out var json))  // e.g. a number at the very end is only complete now
+    Process(AppJson.Deserialize<Order>(json));
+```
+
+In the default `Values` mode, the input is a sequence of values, e.g. a single document, newline-delimited JSON (one value per line),
+or concatenated values; each value is returned when it is complete.
+
+The feed only finds the boundaries of values; each value is validated when it is read through the returned `JsonReader`. That reader is
+only valid until the next call to the feed, so read the value first. `JsonFeed` adds about 3 KB to a Native AOT binary.
+Fully asynchronous parsing (resuming in the middle of a value) is not supported because it would add a lot of code.
 
 Nesting of arrays and objects is limited to `MaxDepth` levels (default 64) to protect against stack exhaustion
 from malicious input.
